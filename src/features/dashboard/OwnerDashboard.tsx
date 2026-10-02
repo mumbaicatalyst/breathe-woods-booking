@@ -14,8 +14,8 @@ export function OwnerDashboard() {
         <article><h2>Commercial settings</h2><p>Future rates, holiday rules, offers, add-ons and policies will be managed here with effective dates and history.</p></article>
       </section>
       <section className="owner-callout">
-        <h2>{isSupabaseConfigured ? 'Database connection detected' : 'Setup pending'}</h2>
-        <p>{isSupabaseConfigured ? 'The next implementation milestone will activate authenticated dashboard data and workflows.' : 'This route is intentionally not a public demo dashboard. Supabase authentication and real inventory are required before it is activated.'}</p>
+        <h2>{isSupabaseConfigured ? 'UAT connection configured' : 'Setup pending'}</h2>
+        <p>{isSupabaseConfigured ? 'The project connection is ready locally. Applying the booking schema and inventory configuration is the next step before authenticated dashboard data and workflows activate.' : 'This route is intentionally not a public demo dashboard. Supabase authentication and real inventory are required before it is activated.'}</p>
       </section>
     </main>
   )

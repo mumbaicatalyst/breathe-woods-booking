@@ -49,6 +49,7 @@ export function BookingApp() {
             </div>
             <button className="primary" disabled={!canSearch || !isSupabaseConfigured} onClick={() => setStage('personalise')}>Check availability</button>
             {!isSupabaseConfigured && <p className="setup-note">Live availability will appear here once the UAT inventory connection is configured. This clean build intentionally contains no seeded stays or test calendar.</p>}
+            {isSupabaseConfigured && <p className="setup-note">UAT connection is configured locally. Live availability activates after the booking schema and inventory configuration are applied.</p>}
           </section>
         )}
 
