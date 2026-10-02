@@ -3,6 +3,7 @@ import type { BookingDraft, BookingStage } from '../../lib/types'
 import { isSupabaseConfigured } from '../../lib/config'
 import { formatInrFromPaise, getAvailableProducts, type AvailableProduct } from './availability'
 import { getBookingQuote, type BookingQuote, type QuoteInput } from './quote'
+import { createBookingHold, type BookingHold } from './hold'
 
 const initialDraft: BookingDraft = {
   checkIn: '',
@@ -29,6 +30,12 @@ export function BookingApp() {
   const [quote, setQuote] = useState<BookingQuote | null>(null)
   const [quoteError, setQuoteError] = useState<string | null>(null)
   const [isQuoting, setIsQuoting] = useState(false)
+  const [guestName, setGuestName] = useState('')
+  const [guestEmail, setGuestEmail] = useState('')
+  const [guestPhone, setGuestPhone] = useState('')
+  const [hold, setHold] = useState<BookingHold | null>(null)
+  const [holdError, setHoldError] = useState<string | null>(null)
+  const [isCreatingHold, setIsCreatingHold] = useState(false)
   const stageIndex = stages.findIndex(({ id }) => id === stage)
   const canSearch = Boolean(draft.checkIn && draft.checkOut && draft.checkOut > draft.checkIn)
   const selectedProduct = availability?.find((product) => product.productId === draft.selectedProductId)
@@ -68,6 +75,23 @@ export function BookingApp() {
       setQuote(null)
       setQuoteError(error instanceof Error ? error.message : 'We could not create a quote. Please review your selections.')
     } finally { setIsQuoting(false) }
+  }
+
+  async function createHold() {
+    if (!draft.selectedProductId) return
+    setIsCreatingHold(true)
+    setHoldError(null)
+    try {
+      const result = await createBookingHold({
+        productId: draft.selectedProductId, checkIn: draft.checkIn, checkOut: draft.checkOut,
+        adults: draft.party.adults, children7To12: draft.party.children7To12, children0To6: draft.party.children0To6, pets: draft.party.pets,
+        mealPlan, bonfireSessions, lakeOutings, guestName, guestEmail, guestPhone,
+      })
+      setHold(result)
+      setStage('payment')
+    } catch (error) {
+      setHoldError(error instanceof Error ? error.message : 'We could not hold this stay. Please try again.')
+    } finally { setIsCreatingHold(false) }
   }
 
   return (
@@ -134,10 +158,10 @@ export function BookingApp() {
             <button className="text-button" onClick={() => setStage('search')}>Change dates or stay</button>
           </section>
         )}
-        {stage === 'details' && (
-          <section className="empty-state"><p className="eyebrow">Next live capability</p><h1>Your details</h1><p>The UAT quote is working. Guest contact capture, payment hold and PhonePe checkout are the next implementation layer; no test booking is created at this point.</p><button className="secondary" onClick={() => setStage('personalise')}>Back to price</button></section>
+        {stage === 'details' && quote && (
+          <section><p className="eyebrow">One last step</p><h1>Your details</h1><p className="intro">We’ll hold this stay for 10 minutes while payment is arranged. It is not confirmed until payment succeeds.</p><div className="form-grid"><label>Full name<input autoComplete="name" value={guestName} onChange={(event) => setGuestName(event.target.value)} /></label><label>Email<input type="email" autoComplete="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} /></label><label>Mobile / WhatsApp number<input type="tel" autoComplete="tel" value={guestPhone} onChange={(event) => setGuestPhone(event.target.value)} /></label></div><section className="quote-card"><div className="quote-total"><span>Amount to pay</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>By continuing, you acknowledge that this UAT booking is held temporarily and will require payment confirmation.</p></section><button className="primary" onClick={createHold} disabled={isCreatingHold}>{isCreatingHold ? 'Holding your stay…' : 'Continue to payment'}</button>{holdError && <p className="form-error">{holdError}</p>}<button className="text-button" onClick={() => setStage('personalise')}>Back to price</button></section>
         )}
-        {stage === 'payment' && <section className="empty-state"><h1>Payment</h1><p>This step activates only after a live reservation hold and PhonePe UAT integration are ready.</p></section>}
+        {stage === 'payment' && hold && <section className="empty-state"><p className="eyebrow">Stay held temporarily</p><h1>Payment setup pending</h1><p>Your UAT reference is <strong>{hold.reference}</strong>. This inventory hold expires at {new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }).format(new Date(hold.expires_at))}. PhonePe checkout will replace this screen when its UAT credentials are connected.</p><section className="quote-card"><div className="quote-total"><span>Amount due</span><strong>{formatInrFromPaise(hold.total_paise)}</strong></div></section></section>}
       </section>
 
       <footer className="booking-footer">Need something specific? <a href="mailto:sanil.prashant@gmail.com">Message the host</a></footer>
