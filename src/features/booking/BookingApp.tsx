@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { BookingDraft, BookingStage } from '../../lib/types'
 import { isSupabaseConfigured } from '../../lib/config'
 import { formatInrFromPaise, getAvailableProducts, type AvailableProduct } from './availability'
+import { getBookingQuote, type BookingQuote, type QuoteInput } from './quote'
 
 const initialDraft: BookingDraft = {
   checkIn: '',
@@ -22,8 +23,15 @@ export function BookingApp() {
   const [availability, setAvailability] = useState<AvailableProduct[] | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [isSearching, setIsSearching] = useState(false)
+  const [mealPlan, setMealPlan] = useState<QuoteInput['mealPlan']>('breakfast')
+  const [bonfireSessions, setBonfireSessions] = useState(0)
+  const [lakeOutings, setLakeOutings] = useState(0)
+  const [quote, setQuote] = useState<BookingQuote | null>(null)
+  const [quoteError, setQuoteError] = useState<string | null>(null)
+  const [isQuoting, setIsQuoting] = useState(false)
   const stageIndex = stages.findIndex(({ id }) => id === stage)
   const canSearch = Boolean(draft.checkIn && draft.checkOut && draft.checkOut > draft.checkIn)
+  const selectedProduct = availability?.find((product) => product.productId === draft.selectedProductId)
 
   async function searchAvailability() {
     if (!canSearch) return
@@ -38,6 +46,22 @@ export function BookingApp() {
     } finally {
       setIsSearching(false)
     }
+  }
+
+  async function calculateQuote() {
+    if (!draft.selectedProductId) return
+    setIsQuoting(true)
+    setQuoteError(null)
+    try {
+      setQuote(await getBookingQuote({
+        productId: draft.selectedProductId, checkIn: draft.checkIn, checkOut: draft.checkOut,
+        adults: draft.party.adults, children7To12: draft.party.children7To12, children0To6: draft.party.children0To6, pets: draft.party.pets,
+        mealPlan, bonfireSessions, lakeOutings,
+      }))
+    } catch (error) {
+      setQuote(null)
+      setQuoteError(error instanceof Error ? error.message : 'We could not create a quote. Please review your selections.')
+    } finally { setIsQuoting(false) }
   }
 
   return (
@@ -76,7 +100,7 @@ export function BookingApp() {
                 {availability.length === 0 ? <p>Try other dates, a smaller party, or message the host for a special request.</p> : availability.map((product) => (
                   <article className="stay-option" key={product.productId}>
                     <div><p className="option-kind">{product.sellableKind === 'entire_property' ? 'Entire property' : product.sellableKind}</p><h3>{product.productName}</h3><p>Up to {product.maxOvernightGuests} overnight guests</p></div>
-                    <div className="option-price"><strong>From {formatInrFromPaise(product.fromAmountPaise)}</strong><span>per night</span><button className="secondary" onClick={() => { setDraft({ ...draft, selectedProductId: product.productId }); setStage('personalise') }}>Select</button></div>
+                    <div className="option-price"><strong>From {formatInrFromPaise(product.fromAmountPaise)}</strong><span>per night</span><button className="secondary" onClick={() => { setDraft({ ...draft, selectedProductId: product.productId }); setMealPlan(product.sellableKind === 'entire_property' ? 'all_meals' : 'breakfast'); setStage('personalise') }}>Select</button></div>
                   </article>
                 ))}
               </section>
@@ -84,14 +108,30 @@ export function BookingApp() {
           </section>
         )}
 
-        {stage !== 'search' && (
-          <section className="empty-state">
-            <p className="eyebrow">Booking engine foundation</p>
-            <h1>{stages[stageIndex].label}</h1>
-            <p>This step is connected after the UAT database, availability service and PhonePe sandbox credentials are added. No made-up prices, reservations or payment outcomes are shown to guests.</p>
-            <button className="secondary" onClick={() => setStage('search')}>Back to dates</button>
+        {stage === 'personalise' && selectedProduct && (
+          <section>
+            <p className="eyebrow">{selectedProduct.sellableKind.replace('_', ' ')}</p>
+            <h1>{selectedProduct.productName}</h1>
+            <p className="intro">Tell us who is travelling and choose the stay experience. Children aged 0–6 are complimentary but count toward capacity.</p>
+            <div className="form-grid">
+              <label>Adults (13+)<input type="number" min="1" max={selectedProduct.maxOvernightGuests} value={draft.party.adults} onChange={(event) => setDraft({ ...draft, party: { ...draft.party, adults: Math.max(1, Number(event.target.value) || 1) } })} /></label>
+              <label>Children (7–12)<input type="number" min="0" max={selectedProduct.maxOvernightGuests} value={draft.party.children7To12} onChange={(event) => setDraft({ ...draft, party: { ...draft.party, children7To12: Math.max(0, Number(event.target.value) || 0) } })} /></label>
+              <label>Children (0–6)<input type="number" min="0" max={selectedProduct.maxOvernightGuests} value={draft.party.children0To6} onChange={(event) => setDraft({ ...draft, party: { ...draft.party, children0To6: Math.max(0, Number(event.target.value) || 0) } })} /></label>
+              <label>Pets<input type="number" min="0" max="3" value={draft.party.pets} onChange={(event) => setDraft({ ...draft, party: { ...draft.party, pets: Math.max(0, Number(event.target.value) || 0) } })} /></label>
+              <label>Meal plan<select value={mealPlan} onChange={(event) => setMealPlan(event.target.value as QuoteInput['mealPlan'])} disabled={selectedProduct.sellableKind === 'entire_property'}>{selectedProduct.sellableKind !== 'entire_property' && <><option value="breakfast">Breakfast only</option><option value="breakfast_plus_one">Breakfast + 1 meal</option></>}<option value="all_meals">All meals</option></select></label>
+              <label>Bonfire + barbecue evenings<input type="number" min="0" max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onChange={(event) => setBonfireSessions(Math.max(0, Number(event.target.value) || 0))} /></label>
+              <label>Lake outings<input type="number" min="0" max="10" value={lakeOutings} onChange={(event) => setLakeOutings(Math.max(0, Number(event.target.value) || 0))} /></label>
+            </div>
+            <button className="primary" onClick={calculateQuote} disabled={isQuoting}>{isQuoting ? 'Calculating your quote…' : 'Review price'}</button>
+            {quoteError && <p className="form-error">{quoteError}</p>}
+            {quote && <section className="quote-card" aria-live="polite"><h2>Your stay estimate</h2>{quote.items.filter((item) => item.amount_paise > 0).map((item) => <div className="quote-line" key={item.label}><span>{item.label}{item.quantity ? ` × ${item.quantity}` : ''}</span><strong>{formatInrFromPaise(item.amount_paise)}</strong></div>)}<div className="quote-total"><span>Total</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>{quote.notice}</p><button className="secondary" onClick={() => setStage('details')}>Continue</button></section>}
+            <button className="text-button" onClick={() => setStage('search')}>Change dates or stay</button>
           </section>
         )}
+        {stage === 'details' && (
+          <section className="empty-state"><p className="eyebrow">Next live capability</p><h1>Your details</h1><p>The UAT quote is working. Guest contact capture, payment hold and PhonePe checkout are the next implementation layer; no test booking is created at this point.</p><button className="secondary" onClick={() => setStage('personalise')}>Back to price</button></section>
+        )}
+        {stage === 'payment' && <section className="empty-state"><h1>Payment</h1><p>This step activates only after a live reservation hold and PhonePe UAT integration are ready.</p></section>}
       </section>
 
       <footer className="booking-footer">Need something specific? <a href="mailto:sanil.prashant@gmail.com">Message the host</a></footer>

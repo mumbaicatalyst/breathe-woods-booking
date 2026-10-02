@@ -1,7 +1,7 @@
 :root { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17231f; background: #f6f4ed; font-synthesis: none; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button { cursor: pointer; }
 .booking-shell { max-width: 760px; margin: 0 auto; padding: 24px 18px 38px; min-height: 100vh; }
 .booking-header, .owner-header { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 32px; }
@@ -20,7 +20,7 @@ h2 { font-size: 1.1rem; }
 .intro { color: #536157; line-height: 1.55; margin: 14px 0 26px; max-width: 48ch; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
 label { display: grid; gap: 7px; color: #33443b; font-size: .86rem; font-weight: 700; }
-input { width: 100%; background: #fff; border: 1px solid #cfd8ca; border-radius: 10px; padding: 12px; color: #17231f; }
+input, select { width: 100%; background: #fff; border: 1px solid #cfd8ca; border-radius: 10px; padding: 12px; color: #17231f; }
 .form-grid label:last-child { grid-column: 1 / -1; }
 .primary, .secondary { min-height: 48px; border-radius: 10px; padding: 0 18px; font-weight: 700; }
 .primary { width: 100%; border: 1px solid #173b31; background: #173b31; color: white; }
@@ -28,6 +28,7 @@ input { width: 100%; background: #fff; border: 1px solid #cfd8ca; border-radius:
 .secondary { border: 1px solid #173b31; background: transparent; color: #173b31; }
 .setup-note { margin: 18px 0 0; color: #66746a; font-size: .85rem; line-height: 1.45; }
 .form-error { margin: 16px 0 0; color: #992c21; font-size: .9rem; }.availability-results { border-top: 1px solid #e0e4d9; margin-top: 26px; padding-top: 24px; }.availability-results > h2 { font: 500 1.45rem Georgia, serif; }.availability-results > p { color: #536157; line-height: 1.5; }.stay-option { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-top: 1px solid #edf0e8; padding: 18px 0; }.stay-option:first-of-type { margin-top: 10px; }.stay-option h3 { color: #173b31; margin: 3px 0; font: 500 1.2rem Georgia, serif; }.stay-option p { color: #66746a; font-size: .84rem; margin: 0; }.option-kind { text-transform: uppercase; font-size: .67rem !important; font-weight: 700; letter-spacing: .1em; }.option-price { display: grid; gap: 3px; justify-items: end; text-align: right; }.option-price strong { color: #173b31; font-size: .9rem; }.option-price span { color: #66746a; font-size: .75rem; }.option-price .secondary { min-height: 36px; margin-top: 8px; font-size: .82rem; }
+.quote-card { margin-top: 22px; border: 1px solid #d9e1d3; border-radius: 14px; background: #f5f8f0; padding: 18px; }.quote-card h2 { font: 500 1.35rem Georgia, serif; margin-bottom: 12px; }.quote-line, .quote-total { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; color: #3d4d44; font-size: .9rem; }.quote-total { margin-top: 8px; border-top: 1px solid #d6dfd0; color: #173b31; font-size: 1rem; }.quote-card p { color: #66746a; line-height: 1.45; font-size: .8rem; }.text-button { margin-top: 18px; border: 0; background: transparent; color: #173b31; padding: 4px 0; text-decoration: underline; }
 .empty-state { min-height: 285px; display: grid; align-content: center; gap: 14px; }
 .empty-state p { color: #536157; line-height: 1.55; max-width: 52ch; margin: 0; }
 .booking-footer { text-align: center; margin-top: 22px; }.booking-footer a { color: #173b31; font-weight: 700; }
