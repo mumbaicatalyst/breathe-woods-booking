@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { BookingDraft, BookingStage } from '../../lib/types'
 import { isSupabaseConfigured } from '../../lib/config'
+import { formatInrFromPaise, getAvailableProducts, type AvailableProduct } from './availability'
 
 const initialDraft: BookingDraft = {
   checkIn: '',
@@ -18,8 +19,26 @@ const stages: { id: BookingStage; label: string }[] = [
 export function BookingApp() {
   const [stage, setStage] = useState<BookingStage>('search')
   const [draft, setDraft] = useState<BookingDraft>(initialDraft)
+  const [availability, setAvailability] = useState<AvailableProduct[] | null>(null)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [isSearching, setIsSearching] = useState(false)
   const stageIndex = stages.findIndex(({ id }) => id === stage)
   const canSearch = Boolean(draft.checkIn && draft.checkOut && draft.checkOut > draft.checkIn)
+
+  async function searchAvailability() {
+    if (!canSearch) return
+    setIsSearching(true)
+    setSearchError(null)
+    try {
+      const partySize = draft.party.adults + draft.party.children7To12 + draft.party.children0To6
+      setAvailability(await getAvailableProducts(draft.checkIn, draft.checkOut, partySize))
+    } catch (error) {
+      setAvailability(null)
+      setSearchError(error instanceof Error ? error.message : 'We could not check availability. Please try again.')
+    } finally {
+      setIsSearching(false)
+    }
+  }
 
   return (
     <main className="booking-shell">
@@ -47,9 +66,21 @@ export function BookingApp() {
               <label>Check-out<input type="date" min={draft.checkIn || undefined} value={draft.checkOut} onChange={(event) => setDraft({ ...draft, checkOut: event.target.value })} /></label>
               <label>Total guests<input type="number" min="1" max="15" value={draft.party.adults + draft.party.children7To12 + draft.party.children0To6} onChange={(event) => setDraft({ ...draft, party: { ...draft.party, adults: Math.max(1, Number(event.target.value) || 1), children7To12: 0, children0To6: 0 } })} /></label>
             </div>
-            <button className="primary" disabled={!canSearch || !isSupabaseConfigured} onClick={() => setStage('personalise')}>Check availability</button>
+            <button className="primary" disabled={!canSearch || !isSupabaseConfigured || isSearching} onClick={searchAvailability}>{isSearching ? 'Checking availability…' : 'Check availability'}</button>
             {!isSupabaseConfigured && <p className="setup-note">Live availability will appear here once the UAT inventory connection is configured. This clean build intentionally contains no seeded stays or test calendar.</p>}
             {isSupabaseConfigured && <p className="setup-note">UAT connection is configured locally. Live availability activates after the booking schema and inventory configuration are applied.</p>}
+            {searchError && <p className="form-error">{searchError}</p>}
+            {availability && (
+              <section className="availability-results" aria-live="polite">
+                <h2>{availability.length ? 'Available stays' : 'No stays available for those dates'}</h2>
+                {availability.length === 0 ? <p>Try other dates, a smaller party, or message the host for a special request.</p> : availability.map((product) => (
+                  <article className="stay-option" key={product.productId}>
+                    <div><p className="option-kind">{product.sellableKind === 'entire_property' ? 'Entire property' : product.sellableKind}</p><h3>{product.productName}</h3><p>Up to {product.maxOvernightGuests} overnight guests</p></div>
+                    <div className="option-price"><strong>From {formatInrFromPaise(product.fromAmountPaise)}</strong><span>per night</span><button className="secondary" onClick={() => { setDraft({ ...draft, selectedProductId: product.productId }); setStage('personalise') }}>Select</button></div>
+                  </article>
+                ))}
+              </section>
+            )}
           </section>
         )}
 
