@@ -33,6 +33,11 @@ export function BookingApp() {
   const canSearch = Boolean(draft.checkIn && draft.checkOut && draft.checkOut > draft.checkIn)
   const selectedProduct = availability?.find((product) => product.productId === draft.selectedProductId)
 
+  function invalidateQuote() {
+    setQuote(null)
+    setQuoteError(null)
+  }
+
   async function searchAvailability() {
     if (!canSearch) return
     setIsSearching(true)
@@ -40,6 +45,7 @@ export function BookingApp() {
     try {
       const partySize = draft.party.adults + draft.party.children7To12 + draft.party.children0To6
       setAvailability(await getAvailableProducts(draft.checkIn, draft.checkOut, partySize))
+      invalidateQuote()
     } catch (error) {
       setAvailability(null)
       setSearchError(error instanceof Error ? error.message : 'We could not check availability. Please try again.')
@@ -86,9 +92,9 @@ export function BookingApp() {
             <h1 id="booking-title">Find your escape</h1>
             <p className="intro">Choose dates and your total party. We’ll show only stays that are genuinely available.</p>
             <div className="form-grid">
-              <label>Check-in<input type="date" value={draft.checkIn} onChange={(event) => setDraft({ ...draft, checkIn: event.target.value })} /></label>
-              <label>Check-out<input type="date" min={draft.checkIn || undefined} value={draft.checkOut} onChange={(event) => setDraft({ ...draft, checkOut: event.target.value })} /></label>
-              <label>Total guests<input type="number" min="1" max="15" value={draft.party.adults + draft.party.children7To12 + draft.party.children0To6} onChange={(event) => setDraft({ ...draft, party: { ...draft.party, adults: Math.max(1, Number(event.target.value) || 1), children7To12: 0, children0To6: 0 } })} /></label>
+              <label>Check-in<input type="date" value={draft.checkIn} onChange={(event) => { invalidateQuote(); setAvailability(null); setDraft({ ...draft, checkIn: event.target.value }) }} /></label>
+              <label>Check-out<input type="date" min={draft.checkIn || undefined} value={draft.checkOut} onChange={(event) => { invalidateQuote(); setAvailability(null); setDraft({ ...draft, checkOut: event.target.value }) }} /></label>
+              <label>Total guests<input type="number" min="1" max="15" value={draft.party.adults + draft.party.children7To12 + draft.party.children0To6} onChange={(event) => { invalidateQuote(); setAvailability(null); setDraft({ ...draft, party: { ...draft.party, adults: Math.max(1, Number(event.target.value) || 1), children7To12: 0, children0To6: 0 } }) }} /></label>
             </div>
             <button className="primary" disabled={!canSearch || !isSupabaseConfigured || isSearching} onClick={searchAvailability}>{isSearching ? 'Checking availability…' : 'Check availability'}</button>
             {!isSupabaseConfigured && <p className="setup-note">Live availability will appear here once the UAT inventory connection is configured. This clean build intentionally contains no seeded stays or test calendar.</p>}
@@ -100,7 +106,7 @@ export function BookingApp() {
                 {availability.length === 0 ? <p>Try other dates, a smaller party, or message the host for a special request.</p> : availability.map((product) => (
                   <article className="stay-option" key={product.productId}>
                     <div><p className="option-kind">{product.sellableKind === 'entire_property' ? 'Entire property' : product.sellableKind}</p><h3>{product.productName}</h3><p>Up to {product.maxOvernightGuests} overnight guests</p></div>
-                    <div className="option-price"><strong>From {formatInrFromPaise(product.fromAmountPaise)}</strong><span>per night</span><button className="secondary" onClick={() => { setDraft({ ...draft, selectedProductId: product.productId }); setMealPlan(product.sellableKind === 'entire_property' ? 'all_meals' : 'breakfast'); setStage('personalise') }}>Select</button></div>
+                    <div className="option-price"><strong>From {formatInrFromPaise(product.fromAmountPaise)}</strong><span>per night</span><button className="secondary" onClick={() => { invalidateQuote(); setDraft({ ...draft, selectedProductId: product.productId }); setMealPlan(product.sellableKind === 'entire_property' ? 'all_meals' : 'breakfast'); setStage('personalise') }}>Select</button></div>
                   </article>
                 ))}
               </section>
@@ -114,13 +120,13 @@ export function BookingApp() {
             <h1>{selectedProduct.productName}</h1>
             <p className="intro">Tell us who is travelling and choose the stay experience. Children aged 0–6 are complimentary but count toward capacity.</p>
             <div className="form-grid">
-              <label>Adults (13+)<input type="number" min="1" max={selectedProduct.maxOvernightGuests} value={draft.party.adults} onChange={(event) => setDraft({ ...draft, party: { ...draft.party, adults: Math.max(1, Number(event.target.value) || 1) } })} /></label>
-              <label>Children (7–12)<input type="number" min="0" max={selectedProduct.maxOvernightGuests} value={draft.party.children7To12} onChange={(event) => setDraft({ ...draft, party: { ...draft.party, children7To12: Math.max(0, Number(event.target.value) || 0) } })} /></label>
-              <label>Children (0–6)<input type="number" min="0" max={selectedProduct.maxOvernightGuests} value={draft.party.children0To6} onChange={(event) => setDraft({ ...draft, party: { ...draft.party, children0To6: Math.max(0, Number(event.target.value) || 0) } })} /></label>
-              <label>Pets<input type="number" min="0" max="3" value={draft.party.pets} onChange={(event) => setDraft({ ...draft, party: { ...draft.party, pets: Math.max(0, Number(event.target.value) || 0) } })} /></label>
-              <label>Meal plan<select value={mealPlan} onChange={(event) => setMealPlan(event.target.value as QuoteInput['mealPlan'])} disabled={selectedProduct.sellableKind === 'entire_property'}>{selectedProduct.sellableKind !== 'entire_property' && <><option value="breakfast">Breakfast only</option><option value="breakfast_plus_one">Breakfast + 1 meal</option></>}<option value="all_meals">All meals</option></select></label>
-              <label>Bonfire + barbecue evenings<input type="number" min="0" max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onChange={(event) => setBonfireSessions(Math.max(0, Number(event.target.value) || 0))} /></label>
-              <label>Lake outings<input type="number" min="0" max="10" value={lakeOutings} onChange={(event) => setLakeOutings(Math.max(0, Number(event.target.value) || 0))} /></label>
+              <label>Adults (13+)<input type="number" min="1" max={selectedProduct.maxOvernightGuests} value={draft.party.adults} onChange={(event) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, adults: Math.max(1, Number(event.target.value) || 1) } }) }} /></label>
+              <label>Children (7–12)<input type="number" min="0" max={selectedProduct.maxOvernightGuests} value={draft.party.children7To12} onChange={(event) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, children7To12: Math.max(0, Number(event.target.value) || 0) } }) }} /></label>
+              <label>Children (0–6)<input type="number" min="0" max={selectedProduct.maxOvernightGuests} value={draft.party.children0To6} onChange={(event) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, children0To6: Math.max(0, Number(event.target.value) || 0) } }) }} /></label>
+              <label>Pets<input type="number" min="0" max="3" value={draft.party.pets} onChange={(event) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, pets: Math.max(0, Number(event.target.value) || 0) } }) }} /></label>
+              <label>Meal plan<select value={mealPlan} onChange={(event) => { invalidateQuote(); setMealPlan(event.target.value as QuoteInput['mealPlan']) }} disabled={selectedProduct.sellableKind === 'entire_property'}>{selectedProduct.sellableKind !== 'entire_property' && <><option value="breakfast">Breakfast only</option><option value="breakfast_plus_one">Breakfast + 1 meal</option></>}<option value="all_meals">All meals</option></select></label>
+              <label>Bonfire + barbecue evenings<input type="number" min="0" max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onChange={(event) => { invalidateQuote(); setBonfireSessions(Math.max(0, Number(event.target.value) || 0)) }} /></label>
+              <label>Lake outings<input type="number" min="0" max="10" value={lakeOutings} onChange={(event) => { invalidateQuote(); setLakeOutings(Math.max(0, Number(event.target.value) || 0)) }} /></label>
             </div>
             <button className="primary" onClick={calculateQuote} disabled={isQuoting}>{isQuoting ? 'Calculating your quote…' : 'Review price'}</button>
             {quoteError && <p className="form-error">{quoteError}</p>}
