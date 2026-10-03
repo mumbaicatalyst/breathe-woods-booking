@@ -45,3 +45,7 @@ The repository contains a deliberately clean shell, not a fake functional hotel 
 - no live Supabase or PhonePe connection yet.
 
 The next implementation milestone is UAT Supabase connection, role/auth setup and server-side availability/pricing services.
+
+## Deployment reminder: Supabase Auth redirects
+
+For local development, allow `http://127.0.0.1:5173/owner` in Supabase Auth URL Configuration. Before deploying UAT, add the UAT cloud owner-dashboard URL (for example, `https://uat-book.example.com/owner`) to the **UAT** Supabase project's approved redirect URLs. The future production Supabase project must use only its real production owner-dashboard URL.
