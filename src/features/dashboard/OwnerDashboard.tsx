@@ -29,7 +29,14 @@ export function OwnerDashboard() {
   async function requestSignIn() {
     if (!supabase) return
     setMessage(null)
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: `${window.location.origin}/owner` } })
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/owner`,
+        // The dashboard is invitation-only: never create an Auth user from this form.
+        shouldCreateUser: false,
+      },
+    })
     setMessage(error ? error.message : 'Check your email for the secure sign-in link.')
   }
 
