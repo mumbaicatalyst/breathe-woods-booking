@@ -6,7 +6,7 @@ export type BookingHold = { reservation_id: string; reference: string; payment_i
 
 export async function createBookingHold(input: HoldInput): Promise<BookingHold> {
   if (!supabase) throw new Error('UAT connection has not been configured.')
-  const { data, error } = await supabase.rpc('create_uat_booking_hold', {
+  const { data, error } = await supabase.rpc('create_uat_booking_hold_bundle_aware', {
     p_product_id: input.productId, p_check_in: input.checkIn, p_check_out: input.checkOut,
     p_adults: input.adults, p_children_7_to_12: input.children7To12, p_children_0_to_6: input.children0To6, p_pets: input.pets,
     p_meal_plan: input.mealPlan, p_bonfire_sessions: input.bonfireSessions, p_lake_outings: 0, p_lake_trip_guests: input.lakeTripGuests,

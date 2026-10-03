@@ -4,7 +4,7 @@ export type AvailableProduct = {
   productId: string
   productCode: string
   productName: string
-  sellableKind: 'room' | 'villa' | 'entire_property'
+  sellableKind: 'room' | 'room_bundle' | 'villa' | 'entire_property'
   maxOvernightGuests: number
   includedChargeableGuests: number
   fromAmountPaise: number | null

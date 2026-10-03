@@ -27,6 +27,13 @@ const countryCodes = [
   { label: 'Singapore', value: '+65' },
 ]
 
+function stayKindLabel(kind: string) {
+  if (kind === 'entire_property') return 'Entire property'
+  if (kind === 'room_bundle') return 'Two bedrooms'
+  if (kind === 'room') return 'Room'
+  return 'Villa'
+}
+
 type NumericFieldProps = {
   label: string
   value: number
@@ -242,7 +249,7 @@ export function BookingApp() {
                 <h2>{availability.length ? 'Available stays' : 'No stays available for those dates'}</h2>
                 {availability.length === 0 ? <p>Try other dates, a smaller party, or message the host for a special request.</p> : availability.map((product) => (
                   <article className="stay-option" key={product.productId}>
-                    <div><p className="option-kind">{product.sellableKind === 'entire_property' ? 'Entire property' : product.sellableKind}</p><h3>{product.productName}</h3><p>Up to {product.maxOvernightGuests} overnight guests</p></div>
+                    <div><p className="option-kind">{stayKindLabel(product.sellableKind)}</p><h3>{product.productName}</h3><p>{product.sellableKind === 'room_bundle' ? 'Up to 4 guests · 2 of 3 bedrooms; the remaining bedroom may be booked separately.' : `Up to ${product.maxOvernightGuests} overnight guests`}</p></div>
                     <div className="option-price"><strong>From {formatInrFromPaise(product.fromAmountPaise)}</strong><span>per night</span><button className="secondary" onClick={() => { invalidateQuote(); setDraft({ ...draft, selectedProductId: product.productId }); setMealPlan(product.sellableKind === 'entire_property' ? 'all_meals' : 'breakfast'); setStage('personalise') }}>Select</button></div>
                   </article>
                 ))}
@@ -253,7 +260,7 @@ export function BookingApp() {
 
         {stage === 'personalise' && selectedProduct && (
           <section>
-            <p className="eyebrow">{selectedProduct.sellableKind.replace('_', ' ')}</p>
+            <p className="eyebrow">{stayKindLabel(selectedProduct.sellableKind)}</p>
             <h1>{selectedProduct.productName}</h1>
             <p className="intro">Your group is {requestedGuestCount} {requestedGuestCount === 1 ? 'guest' : 'guests'}. Set the age breakdown below; it will always stay within that total. Children aged 0–6 are complimentary but count toward capacity.</p>
             <div className="form-grid">

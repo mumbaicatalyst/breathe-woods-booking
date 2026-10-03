@@ -9,7 +9,7 @@ export type QuoteInput = {
 
 export async function getBookingQuote(input: QuoteInput): Promise<BookingQuote> {
   if (!supabase) throw new Error('UAT connection has not been configured.')
-  const { data, error } = await supabase.rpc('get_booking_quote', {
+  const { data, error } = await supabase.rpc('get_booking_quote_bundle_aware', {
     p_product_id: input.productId,
     p_check_in: input.checkIn,
     p_check_out: input.checkOut,
