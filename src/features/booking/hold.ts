@@ -13,6 +13,8 @@ export async function createBookingHold(input: HoldInput): Promise<BookingHold> 
     p_guest_name: input.guestName, p_guest_email: input.guestEmail, p_guest_phone: input.guestPhone,
     p_marketing_opt_in: input.marketingOptIn,
   })
-  if (error) throw error
+  // PostgREST errors are plain objects in some browser builds; normalise them
+  // so the guest sees the useful, safe database message rather than a generic failure.
+  if (error) throw new Error(error.message)
   return data as BookingHold
 }
