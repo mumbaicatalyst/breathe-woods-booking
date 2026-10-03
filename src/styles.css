@@ -21,6 +21,7 @@ h2 { font-size: 1.1rem; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
 label { display: grid; gap: 7px; color: #33443b; font-size: .86rem; font-weight: 700; }
 input, select { width: 100%; background: #fff; border: 1px solid #cfd8ca; border-radius: 10px; padding: 12px; color: #17231f; }
+.numeric-field small { color: #66746a; font-size: .76rem; font-weight: 400; line-height: 1.35; }.numeric-control { display: grid; grid-template-columns: 42px minmax(0, 1fr) 42px; border: 1px solid #cfd8ca; border-radius: 10px; overflow: hidden; background: #fff; }.numeric-control input { border: 0; border-radius: 0; padding: 12px 4px; text-align: center; }.numeric-control button { border: 0; background: #eef3e8; color: #173b31; font-size: 1.2rem; font-weight: 700; }.numeric-control button:disabled { color: #a6afa8; background: #f5f6f2; cursor: not-allowed; }
 input[type="checkbox"] { width: auto; accent-color: #173b31; }
 .form-grid label:last-child { grid-column: 1 / -1; }
 .primary, .secondary { min-height: 48px; border-radius: 10px; padding: 0 18px; font-weight: 700; }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { BookingDraft, BookingStage } from '../../lib/types'
 import { isSupabaseConfigured } from '../../lib/config'
 import { formatInrFromPaise, getAvailableProducts, type AvailableProduct } from './availability'
@@ -27,9 +27,63 @@ const countryCodes = [
   { label: 'Singapore', value: '+65' },
 ]
 
+type NumericFieldProps = {
+  label: string
+  value: number
+  min: number
+  max: number
+  onCommit: (value: number) => void
+  help?: string
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+/**
+ * Keeps a temporary text value while someone is editing. The booking model only
+ * receives a valid, clamped integer when they finish editing or use +/-.
+ */
+function NumericField({ label, value, min, max, onCommit, help }: NumericFieldProps) {
+  const [rawValue, setRawValue] = useState(String(value))
+  const [isEditing, setIsEditing] = useState(false)
+
+  useEffect(() => {
+    if (!isEditing) setRawValue(String(value))
+  }, [value, isEditing])
+
+  function commit() {
+    const parsed = rawValue === '' ? min : Number.parseInt(rawValue, 10)
+    const nextValue = clamp(Number.isFinite(parsed) ? parsed : min, min, max)
+    setRawValue(String(nextValue))
+    setIsEditing(false)
+    onCommit(nextValue)
+  }
+
+  return <label className="numeric-field">{label}
+    <span className="numeric-control">
+      <button type="button" aria-label={`Decrease ${label}`} disabled={value <= min} onClick={() => onCommit(value - 1)}>−</button>
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        aria-label={label}
+        value={rawValue}
+        onFocus={(event) => { setIsEditing(true); event.currentTarget.select() }}
+        onChange={(event) => { if (/^\d*$/.test(event.target.value)) setRawValue(event.target.value) }}
+        onBlur={commit}
+        onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+      />
+      <button type="button" aria-label={`Increase ${label}`} disabled={value >= max} onClick={() => onCommit(value + 1)}>+</button>
+    </span>
+    {help && <small>{help}</small>}
+  </label>
+}
+
 export function BookingApp() {
   const [stage, setStage] = useState<BookingStage>('search')
   const [draft, setDraft] = useState<BookingDraft>(initialDraft)
+  const [requestedGuestCount, setRequestedGuestCount] = useState(2)
   const [availability, setAvailability] = useState<AvailableProduct[] | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [isSearching, setIsSearching] = useState(false)
@@ -48,12 +102,15 @@ export function BookingApp() {
   const [hold, setHold] = useState<BookingHold | null>(null)
   const [holdError, setHoldError] = useState<string | null>(null)
   const [isCreatingHold, setIsCreatingHold] = useState(false)
+  const quoteRequestId = useRef(0)
   const stageIndex = stages.findIndex(({ id }) => id === stage)
   const canSearch = Boolean(draft.checkIn && draft.checkOut && draft.checkOut > draft.checkIn)
   const selectedProduct = availability?.find((product) => product.productId === draft.selectedProductId)
   const effectiveCountryCode = countryCode === 'other' ? customCountryCode : countryCode
   const guestPhoneE164 = `${effectiveCountryCode.replace(/[^0-9+]/g, '')}${guestPhone.replace(/\D/g, '')}`
   const hasValidContactDetails = guestName.trim().length >= 2 && /\S+@\S+\.\S+/.test(guestEmail) && /^\+[1-9][0-9]{7,14}$/.test(guestPhoneE164)
+
+  const partyTotal = draft.party.adults + draft.party.children7To12 + draft.party.children0To6
 
   function invalidateQuote() {
     setQuote(null)
@@ -65,8 +122,7 @@ export function BookingApp() {
     setIsSearching(true)
     setSearchError(null)
     try {
-      const partySize = draft.party.adults + draft.party.children7To12 + draft.party.children0To6
-      setAvailability(await getAvailableProducts(draft.checkIn, draft.checkOut, partySize))
+      setAvailability(await getAvailableProducts(draft.checkIn, draft.checkOut, requestedGuestCount))
       invalidateQuote()
     } catch (error) {
       setAvailability(null)
@@ -76,20 +132,53 @@ export function BookingApp() {
     }
   }
 
-  async function calculateQuote() {
-    if (!draft.selectedProductId) return
-    setIsQuoting(true)
+  useEffect(() => {
+    if (stage !== 'personalise' || !draft.selectedProductId) return
+    const requestId = ++quoteRequestId.current
+    setQuote(null)
     setQuoteError(null)
-    try {
-      setQuote(await getBookingQuote({
-        productId: draft.selectedProductId, checkIn: draft.checkIn, checkOut: draft.checkOut,
-        adults: draft.party.adults, children7To12: draft.party.children7To12, children0To6: draft.party.children0To6, pets: draft.party.pets,
-        mealPlan, bonfireSessions, lakeOutings,
-      }))
-    } catch (error) {
-      setQuote(null)
-      setQuoteError(error instanceof Error ? error.message : 'We could not create a quote. Please review your selections.')
-    } finally { setIsQuoting(false) }
+    const timer = window.setTimeout(async () => {
+      setIsQuoting(true)
+      try {
+        const nextQuote = await getBookingQuote({
+          productId: draft.selectedProductId!, checkIn: draft.checkIn, checkOut: draft.checkOut,
+          adults: draft.party.adults, children7To12: draft.party.children7To12, children0To6: draft.party.children0To6, pets: draft.party.pets,
+          mealPlan, bonfireSessions, lakeOutings,
+        })
+        if (requestId === quoteRequestId.current) setQuote(nextQuote)
+      } catch (error) {
+        if (requestId === quoteRequestId.current) setQuoteError(error instanceof Error ? error.message : 'We could not update the price. Please review your selections.')
+      } finally {
+        if (requestId === quoteRequestId.current) setIsQuoting(false)
+      }
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [stage, draft.selectedProductId, draft.checkIn, draft.checkOut, draft.party.adults, draft.party.children7To12, draft.party.children0To6, draft.party.pets, mealPlan, bonfireSessions, lakeOutings])
+
+  function setPartyBreakdown(category: 'adults' | 'children7To12' | 'children0To6', enteredValue: number) {
+    const total = requestedGuestCount
+    const next = { ...draft.party }
+    if (category === 'adults') {
+      next.adults = clamp(enteredValue, 1, total)
+      let remainingChildPlaces = total - next.adults
+      next.children7To12 = Math.min(next.children7To12, remainingChildPlaces)
+      remainingChildPlaces -= next.children7To12
+      next.children0To6 = Math.min(next.children0To6, remainingChildPlaces)
+    } else {
+      next[category] = clamp(enteredValue, 0, total - 1)
+      const otherChildCategory = category === 'children7To12' ? 'children0To6' : 'children7To12'
+      next[otherChildCategory] = Math.min(next[otherChildCategory], total - 1 - next[category])
+      next.adults = total - next.children7To12 - next.children0To6
+    }
+    invalidateQuote()
+    setDraft({ ...draft, party: next })
+  }
+
+  function setTotalGuests(total: number) {
+    setRequestedGuestCount(total)
+    invalidateQuote()
+    setAvailability(null)
+    setDraft({ ...draft, party: { ...draft.party, adults: total, children7To12: 0, children0To6: 0 } })
   }
 
   async function createHold() {
@@ -133,7 +222,7 @@ export function BookingApp() {
             <div className="form-grid">
               <label>Check-in<input type="date" value={draft.checkIn} onChange={(event) => { invalidateQuote(); setAvailability(null); setDraft({ ...draft, checkIn: event.target.value }) }} /></label>
               <label>Check-out<input type="date" min={draft.checkIn || undefined} value={draft.checkOut} onChange={(event) => { invalidateQuote(); setAvailability(null); setDraft({ ...draft, checkOut: event.target.value }) }} /></label>
-              <label>Total guests<input type="number" min="1" max="15" value={draft.party.adults + draft.party.children7To12 + draft.party.children0To6} onChange={(event) => { invalidateQuote(); setAvailability(null); setDraft({ ...draft, party: { ...draft.party, adults: Math.max(1, Number(event.target.value) || 1), children7To12: 0, children0To6: 0 } }) }} /></label>
+              <NumericField label="Total guests" min={1} max={15} value={requestedGuestCount} onCommit={setTotalGuests} help="You’ll confirm the adult and child breakdown next." />
             </div>
             <button className="primary" disabled={!canSearch || !isSupabaseConfigured || isSearching} onClick={searchAvailability}>{isSearching ? 'Checking availability…' : 'Check availability'}</button>
             {!isSupabaseConfigured && <p className="setup-note">Live availability will appear here once the UAT inventory connection is configured. This clean build intentionally contains no seeded stays or test calendar.</p>}
@@ -157,20 +246,21 @@ export function BookingApp() {
           <section>
             <p className="eyebrow">{selectedProduct.sellableKind.replace('_', ' ')}</p>
             <h1>{selectedProduct.productName}</h1>
-            <p className="intro">Tell us who is travelling and choose the stay experience. Children aged 0–6 are complimentary but count toward capacity.</p>
+            <p className="intro">Your group is {requestedGuestCount} {requestedGuestCount === 1 ? 'guest' : 'guests'}. Set the age breakdown below; it will always stay within that total. Children aged 0–6 are complimentary but count toward capacity.</p>
             <div className="form-grid">
-              <label>Adults (13+)<input type="number" min="1" max={selectedProduct.maxOvernightGuests} value={draft.party.adults} onChange={(event) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, adults: Math.max(1, Number(event.target.value) || 1) } }) }} /></label>
-              <label>Children (7–12)<input type="number" min="0" max={selectedProduct.maxOvernightGuests} value={draft.party.children7To12} onChange={(event) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, children7To12: Math.max(0, Number(event.target.value) || 0) } }) }} /></label>
-              <label>Children (0–6)<input type="number" min="0" max={selectedProduct.maxOvernightGuests} value={draft.party.children0To6} onChange={(event) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, children0To6: Math.max(0, Number(event.target.value) || 0) } }) }} /></label>
-              <label>Pets<input type="number" min="0" max="3" value={draft.party.pets} onChange={(event) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, pets: Math.max(0, Number(event.target.value) || 0) } }) }} /></label>
+              <NumericField label="Adults (13+)" min={1} max={requestedGuestCount} value={draft.party.adults} onCommit={(value) => setPartyBreakdown('adults', value)} />
+              <NumericField label="Children (7–12)" min={0} max={requestedGuestCount - 1} value={draft.party.children7To12} onCommit={(value) => setPartyBreakdown('children7To12', value)} help="Charged only when above the included villa allowance." />
+              <NumericField label="Children (0–6)" min={0} max={requestedGuestCount - 1} value={draft.party.children0To6} onCommit={(value) => setPartyBreakdown('children0To6', value)} help="Complimentary, but included in capacity." />
+              <NumericField label="Pets" min={0} max={3} value={draft.party.pets} onCommit={(value) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, pets: value } }) }} />
               <label>Meal plan<select value={mealPlan} onChange={(event) => { invalidateQuote(); setMealPlan(event.target.value as QuoteInput['mealPlan']) }} disabled={selectedProduct.sellableKind === 'entire_property'}>{selectedProduct.sellableKind !== 'entire_property' && <><option value="breakfast">Breakfast only</option><option value="breakfast_plus_one">Breakfast + 1 meal</option></>}<option value="all_meals">All meals</option></select></label>
-              <label>Bonfire + barbecue evenings<input type="number" min="0" max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onChange={(event) => { invalidateQuote(); setBonfireSessions(Math.max(0, Number(event.target.value) || 0)) }} /></label>
-              <label>Lake outings<input type="number" min="0" max="10" value={lakeOutings} onChange={(event) => { invalidateQuote(); setLakeOutings(Math.max(0, Number(event.target.value) || 0)) }} /></label>
+              <NumericField label="Bonfire + barbecue evenings" min={0} max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onCommit={(value) => { invalidateQuote(); setBonfireSessions(value) }} />
+              <NumericField label="Lake outings" min={0} max={10} value={lakeOutings} onCommit={(value) => { invalidateQuote(); setLakeOutings(value) }} />
             </div>
-            <button className="primary" onClick={calculateQuote} disabled={isQuoting}>{isQuoting ? 'Calculating your quote…' : 'Review price'}</button>
+            <p className="setup-note">{partyTotal} of {requestedGuestCount} guests allocated. Price updates automatically as you make changes.</p>
             {quoteError && <p className="form-error">{quoteError}</p>}
-            {quote && <section className="quote-card" aria-live="polite"><h2>Your stay estimate</h2>{quote.items.filter((item) => item.amount_paise > 0).map((item) => <div className="quote-line" key={item.label}><span>{item.label}{item.quantity ? ` × ${item.quantity}` : ''}</span><strong>{formatInrFromPaise(item.amount_paise)}</strong></div>)}<div className="quote-total"><span>Total</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>{quote.notice}</p><button className="secondary" onClick={() => setStage('details')}>Continue</button></section>}
-            <button className="text-button" onClick={() => setStage('search')}>Change dates or stay</button>
+            {isQuoting && <p className="setup-note" aria-live="polite">Updating your price…</p>}
+            {quote && <section className="quote-card" aria-live="polite"><h2>Your live stay estimate</h2>{quote.items.filter((item) => item.amount_paise > 0).map((item) => <div className="quote-line" key={item.label}><span>{item.label}{item.quantity ? ` × ${item.quantity}` : ''}</span><strong>{formatInrFromPaise(item.amount_paise)}</strong></div>)}<div className="quote-total"><span>Total</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>{quote.notice}</p><button className="secondary" onClick={() => setStage('details')}>Continue</button></section>}
+            <button className="text-button" onClick={() => setStage('search')}>Change dates, stay or total guests</button>
           </section>
         )}
         {stage === 'details' && quote && (
