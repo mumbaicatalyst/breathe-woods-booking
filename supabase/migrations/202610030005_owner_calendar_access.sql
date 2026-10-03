@@ -1,9 +1,20 @@
 -- Invite-only owner/manager access. Auth users are invited manually from the
 -- Supabase Dashboard, then explicitly allow-listed below by an administrator.
 
-create type public.dashboard_role as enum ('owner', 'manager', 'viewer');
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type t
+    join pg_namespace n on n.oid = t.typnamespace
+    where t.typname = 'dashboard_role' and n.nspname = 'public'
+  ) then
+    create type public.dashboard_role as enum ('owner', 'manager', 'viewer');
+  end if;
+end;
+$$;
 
-create table public.owner_profiles (
+create table if not exists public.owner_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   property_id uuid not null references public.properties(id) on delete cascade,
   role public.dashboard_role not null default 'owner',
@@ -13,6 +24,8 @@ create table public.owner_profiles (
 alter table public.owner_profiles enable row level security;
 revoke all on public.owner_profiles from anon, authenticated;
 grant select on public.owner_profiles to authenticated;
+
+drop policy if exists "users can read only their own dashboard profile" on public.owner_profiles;
 
 create policy "users can read only their own dashboard profile"
   on public.owner_profiles for select to authenticated
