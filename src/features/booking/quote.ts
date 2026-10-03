@@ -4,7 +4,7 @@ export type QuoteItem = { label: string; quantity?: number; amount_paise: number
 export type BookingQuote = { currency: 'INR'; nights: number; total_paise: number; items: QuoteItem[]; notice: string }
 
 export type QuoteInput = {
-  productId: string; checkIn: string; checkOut: string; adults: number; children7To12: number; children0To6: number; pets: number; mealPlan: 'breakfast' | 'breakfast_plus_one' | 'all_meals'; bonfireSessions: number; lakeOutings: number
+  productId: string; checkIn: string; checkOut: string; adults: number; children7To12: number; children0To6: number; pets: number; mealPlan: 'breakfast' | 'breakfast_plus_one' | 'all_meals'; bonfireSessions: number; lakeTripGuests: number
 }
 
 export async function getBookingQuote(input: QuoteInput): Promise<BookingQuote> {
@@ -19,7 +19,8 @@ export async function getBookingQuote(input: QuoteInput): Promise<BookingQuote> 
     p_pets: input.pets,
     p_meal_plan: input.mealPlan,
     p_bonfire_sessions: input.bonfireSessions,
-    p_lake_outings: input.lakeOutings,
+    p_lake_outings: 0,
+    p_lake_trip_guests: input.lakeTripGuests,
   })
   if (error) throw error
   return data as BookingQuote

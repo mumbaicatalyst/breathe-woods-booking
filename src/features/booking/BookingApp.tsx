@@ -89,7 +89,7 @@ export function BookingApp() {
   const [isSearching, setIsSearching] = useState(false)
   const [mealPlan, setMealPlan] = useState<QuoteInput['mealPlan']>('breakfast')
   const [bonfireSessions, setBonfireSessions] = useState(0)
-  const [lakeOutings, setLakeOutings] = useState(0)
+  const [lakeTripGuests, setLakeTripGuests] = useState(0)
   const [quote, setQuote] = useState<BookingQuote | null>(null)
   const [quoteError, setQuoteError] = useState<string | null>(null)
   const [isQuoting, setIsQuoting] = useState(false)
@@ -143,7 +143,7 @@ export function BookingApp() {
         const nextQuote = await getBookingQuote({
           productId: draft.selectedProductId!, checkIn: draft.checkIn, checkOut: draft.checkOut,
           adults: draft.party.adults, children7To12: draft.party.children7To12, children0To6: draft.party.children0To6, pets: draft.party.pets,
-          mealPlan, bonfireSessions, lakeOutings,
+          mealPlan, bonfireSessions, lakeTripGuests,
         })
         if (requestId === quoteRequestId.current) setQuote(nextQuote)
       } catch (error) {
@@ -153,7 +153,7 @@ export function BookingApp() {
       }
     }, 300)
     return () => window.clearTimeout(timer)
-  }, [stage, draft.selectedProductId, draft.checkIn, draft.checkOut, draft.party.adults, draft.party.children7To12, draft.party.children0To6, draft.party.pets, mealPlan, bonfireSessions, lakeOutings])
+  }, [stage, draft.selectedProductId, draft.checkIn, draft.checkOut, draft.party.adults, draft.party.children7To12, draft.party.children0To6, draft.party.pets, mealPlan, bonfireSessions, lakeTripGuests])
 
   function setPartyBreakdown(category: 'adults' | 'children7To12' | 'children0To6', enteredValue: number) {
     const total = requestedGuestCount
@@ -189,7 +189,7 @@ export function BookingApp() {
       const result = await createBookingHold({
         productId: draft.selectedProductId, checkIn: draft.checkIn, checkOut: draft.checkOut,
         adults: draft.party.adults, children7To12: draft.party.children7To12, children0To6: draft.party.children0To6, pets: draft.party.pets,
-        mealPlan, bonfireSessions, lakeOutings, guestName, guestEmail, guestPhone: guestPhoneE164, marketingOptIn,
+        mealPlan, bonfireSessions, lakeTripGuests, guestName, guestEmail, guestPhone: guestPhoneE164, marketingOptIn,
       })
       setHold(result)
       setStage('payment')
@@ -254,12 +254,12 @@ export function BookingApp() {
               <NumericField label="Pets" min={0} max={3} value={draft.party.pets} onCommit={(value) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, pets: value } }) }} />
               <label>Meal plan<select value={mealPlan} onChange={(event) => { invalidateQuote(); setMealPlan(event.target.value as QuoteInput['mealPlan']) }} disabled={selectedProduct.sellableKind === 'entire_property'}>{selectedProduct.sellableKind !== 'entire_property' && <><option value="breakfast">Breakfast only</option><option value="breakfast_plus_one">Breakfast + 1 meal</option></>}<option value="all_meals">All meals</option></select></label>
               <NumericField label="Bonfire + barbecue evenings" min={0} max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onCommit={(value) => { invalidateQuote(); setBonfireSessions(value) }} />
-              <NumericField label="Lake outings" min={0} max={10} value={lakeOutings} onCommit={(value) => { invalidateQuote(); setLakeOutings(value) }} />
+              <NumericField label="Guests joining the lake trip" min={0} max={requestedGuestCount} value={lakeTripGuests} onCommit={(value) => { invalidateQuote(); setLakeTripGuests(value) }} help="₹500 covers up to 2 guests; ₹250 for each additional guest." />
             </div>
             <p className="setup-note">{partyTotal} of {requestedGuestCount} guests allocated. Price updates automatically as you make changes.</p>
             {quoteError && <p className="form-error">{quoteError}</p>}
             {isQuoting && <p className="setup-note" aria-live="polite">Updating your price…</p>}
-            {quote && <section className="quote-card" aria-live="polite"><h2>Your live stay estimate</h2>{quote.items.filter((item) => item.amount_paise > 0).map((item) => <div className="quote-line" key={item.label}><span>{item.label}{item.quantity ? ` × ${item.quantity}` : ''}</span><strong>{formatInrFromPaise(item.amount_paise)}</strong></div>)}<div className="quote-total"><span>Total</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>{quote.notice}</p><button className="secondary" onClick={() => setStage('details')}>Continue</button></section>}
+            {quote && <section className="quote-card" aria-live="polite"><h2>Your live stay estimate</h2>{quote.items.filter((item) => item.amount_paise > 0 || item.label.includes('(included)')).map((item) => <div className="quote-line" key={item.label}><span>{item.label}{item.quantity ? ` × ${item.quantity}` : ''}</span><strong>{item.label.includes('(included)') ? 'Included' : formatInrFromPaise(item.amount_paise)}</strong></div>)}<div className="quote-total"><span>Total</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>{quote.notice}</p><button className="secondary" onClick={() => setStage('details')}>Continue</button></section>}
             <button className="text-button" onClick={() => setStage('search')}>Change dates, stay or total guests</button>
           </section>
         )}
