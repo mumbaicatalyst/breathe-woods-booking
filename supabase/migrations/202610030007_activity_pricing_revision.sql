@@ -127,7 +127,7 @@ begin
       jsonb_build_object('label', 'Lake trip', 'quantity', p_lake_trip_guests, 'amount_paise', v_lake_total),
       jsonb_build_object('label', 'Pets', 'quantity', p_pets, 'amount_paise', 0)
     ),
-    'notice', case when v_included_bonfire_sessions > 0 and p_meal_plan = 'breakfast_plus_one' then 'Your first bonfire evening is included; dinner will be used as the included meal for that evening. Additional bonfire evenings are chargeable.' when v_included_bonfire_sessions > 0 then 'Your first bonfire + barbecue evening is included with your qualifying meal plan. Additional evenings are chargeable.' else 'This is a live quote only. Availability is held when payment begins.' end
+    'notice', case when v_included_bonfire_sessions > 0 and p_meal_plan = 'breakfast_plus_one' then 'One bonfire evening is included; dinner will be the included meal on the evening you choose. Confirm your preferred evening at check-in or by messaging Breathe Woods. Additional bonfire evenings are chargeable.' when v_included_bonfire_sessions > 0 then 'One bonfire + barbecue evening is included with your qualifying meal plan. Confirm your preferred evening at check-in or by messaging Breathe Woods. Additional evenings are chargeable.' else 'This is a live quote only. Availability is held when payment begins.' end
   );
 end;
 $$;
