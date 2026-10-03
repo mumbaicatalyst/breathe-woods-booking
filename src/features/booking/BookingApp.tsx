@@ -18,6 +18,15 @@ const stages: { id: BookingStage; label: string }[] = [
   { id: 'payment', label: 'Payment' },
 ]
 
+const countryCodes = [
+  { label: 'India', value: '+91' },
+  { label: 'United Arab Emirates', value: '+971' },
+  { label: 'United Kingdom', value: '+44' },
+  { label: 'United States / Canada', value: '+1' },
+  { label: 'Australia', value: '+61' },
+  { label: 'Singapore', value: '+65' },
+]
+
 export function BookingApp() {
   const [stage, setStage] = useState<BookingStage>('search')
   const [draft, setDraft] = useState<BookingDraft>(initialDraft)
@@ -33,12 +42,18 @@ export function BookingApp() {
   const [guestName, setGuestName] = useState('')
   const [guestEmail, setGuestEmail] = useState('')
   const [guestPhone, setGuestPhone] = useState('')
+  const [countryCode, setCountryCode] = useState('+91')
+  const [customCountryCode, setCustomCountryCode] = useState('')
+  const [marketingOptIn, setMarketingOptIn] = useState(false)
   const [hold, setHold] = useState<BookingHold | null>(null)
   const [holdError, setHoldError] = useState<string | null>(null)
   const [isCreatingHold, setIsCreatingHold] = useState(false)
   const stageIndex = stages.findIndex(({ id }) => id === stage)
   const canSearch = Boolean(draft.checkIn && draft.checkOut && draft.checkOut > draft.checkIn)
   const selectedProduct = availability?.find((product) => product.productId === draft.selectedProductId)
+  const effectiveCountryCode = countryCode === 'other' ? customCountryCode : countryCode
+  const guestPhoneE164 = `${effectiveCountryCode.replace(/[^0-9+]/g, '')}${guestPhone.replace(/\D/g, '')}`
+  const hasValidContactDetails = guestName.trim().length >= 2 && /\S+@\S+\.\S+/.test(guestEmail) && /^\+[1-9][0-9]{7,14}$/.test(guestPhoneE164)
 
   function invalidateQuote() {
     setQuote(null)
@@ -85,7 +100,7 @@ export function BookingApp() {
       const result = await createBookingHold({
         productId: draft.selectedProductId, checkIn: draft.checkIn, checkOut: draft.checkOut,
         adults: draft.party.adults, children7To12: draft.party.children7To12, children0To6: draft.party.children0To6, pets: draft.party.pets,
-        mealPlan, bonfireSessions, lakeOutings, guestName, guestEmail, guestPhone,
+        mealPlan, bonfireSessions, lakeOutings, guestName, guestEmail, guestPhone: guestPhoneE164, marketingOptIn,
       })
       setHold(result)
       setStage('payment')
@@ -159,7 +174,7 @@ export function BookingApp() {
           </section>
         )}
         {stage === 'details' && quote && (
-          <section><p className="eyebrow">One last step</p><h1>Your details</h1><p className="intro">We’ll hold this stay for 10 minutes while payment is arranged. It is not confirmed until payment succeeds.</p><div className="form-grid"><label>Full name<input autoComplete="name" value={guestName} onChange={(event) => setGuestName(event.target.value)} /></label><label>Email<input type="email" autoComplete="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} /></label><label>Mobile / WhatsApp number<input type="tel" autoComplete="tel" value={guestPhone} onChange={(event) => setGuestPhone(event.target.value)} /></label></div><section className="quote-card"><div className="quote-total"><span>Amount to pay</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>By continuing, you acknowledge that this UAT booking is held temporarily and will require payment confirmation.</p></section><button className="primary" onClick={createHold} disabled={isCreatingHold}>{isCreatingHold ? 'Holding your stay…' : 'Continue to payment'}</button>{holdError && <p className="form-error">{holdError}</p>}<button className="text-button" onClick={() => setStage('personalise')}>Back to price</button></section>
+          <section><p className="eyebrow">One last step</p><h1>Your details</h1><p className="intro">We’ll hold this stay for 10 minutes while payment is arranged. It is not confirmed until payment succeeds.</p><div className="form-grid"><label>Full name<input autoComplete="name" value={guestName} onChange={(event) => setGuestName(event.target.value)} /></label><label>Email<input type="email" autoComplete="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} /></label><label className="phone-field">Mobile / WhatsApp number<span className="phone-input"><select aria-label="Country calling code" value={countryCode} onChange={(event) => setCountryCode(event.target.value)}>{countryCodes.map((country) => <option value={country.value} key={country.value}>{country.label} ({country.value})</option>)}<option value="other">Other</option></select>{countryCode === 'other' && <input className="custom-country-code" type="tel" inputMode="tel" aria-label="Country calling code" placeholder="+ code" value={customCountryCode} onChange={(event) => setCustomCountryCode(event.target.value)} />}<input type="tel" inputMode="tel" autoComplete="tel-national" placeholder="Mobile number" value={guestPhone} onChange={(event) => setGuestPhone(event.target.value)} /></span><small>India is selected by default. We’ll use this number for stay updates.</small></label></div><label className="marketing-consent"><input type="checkbox" checked={marketingOptIn} onChange={(event) => setMarketingOptIn(event.target.checked)} /><span>Yes, I’d like occasional Breathe Woods offers and updates by email and WhatsApp.<small>Optional. Booking and stay updates are sent separately. You can opt out at any time.</small></span></label><p className="policy-link">See our <a href="/privacy-and-messaging">Privacy &amp; Messaging Notice</a>.</p><section className="quote-card"><div className="quote-total"><span>Amount to pay</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>By continuing, you acknowledge that this UAT booking is held temporarily and will require payment confirmation.</p></section><button className="primary" onClick={createHold} disabled={isCreatingHold || !hasValidContactDetails}>{isCreatingHold ? 'Holding your stay…' : 'Continue to payment'}</button>{!hasValidContactDetails && <p className="setup-note">Enter your name, email and a valid mobile number to continue.</p>}{holdError && <p className="form-error">{holdError}</p>}<button className="text-button" onClick={() => setStage('personalise')}>Back to price</button></section>
         )}
         {stage === 'payment' && hold && <section className="empty-state"><p className="eyebrow">Stay held temporarily</p><h1>Payment setup pending</h1><p>Your UAT reference is <strong>{hold.reference}</strong>. This inventory hold expires at {new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }).format(new Date(hold.expires_at))}. PhonePe checkout will replace this screen when its UAT credentials are connected.</p><section className="quote-card"><div className="quote-total"><span>Amount due</span><strong>{formatInrFromPaise(hold.total_paise)}</strong></div></section></section>}
       </section>

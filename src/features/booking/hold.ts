@@ -1,7 +1,7 @@
 import { supabase } from '../../lib/supabase'
 import type { QuoteInput } from './quote'
 
-export type HoldInput = QuoteInput & { guestName: string; guestEmail: string; guestPhone: string }
+export type HoldInput = QuoteInput & { guestName: string; guestEmail: string; guestPhone: string; marketingOptIn: boolean }
 export type BookingHold = { reservation_id: string; reference: string; payment_id: string; expires_at: string; total_paise: number }
 
 export async function createBookingHold(input: HoldInput): Promise<BookingHold> {
@@ -11,6 +11,7 @@ export async function createBookingHold(input: HoldInput): Promise<BookingHold> 
     p_adults: input.adults, p_children_7_to_12: input.children7To12, p_children_0_to_6: input.children0To6, p_pets: input.pets,
     p_meal_plan: input.mealPlan, p_bonfire_sessions: input.bonfireSessions, p_lake_outings: input.lakeOutings,
     p_guest_name: input.guestName, p_guest_email: input.guestEmail, p_guest_phone: input.guestPhone,
+    p_marketing_opt_in: input.marketingOptIn,
   })
   if (error) throw error
   return data as BookingHold
