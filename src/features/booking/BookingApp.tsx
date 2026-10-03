@@ -103,6 +103,7 @@ export function BookingApp() {
   const [holdError, setHoldError] = useState<string | null>(null)
   const [isCreatingHold, setIsCreatingHold] = useState(false)
   const quoteRequestId = useRef(0)
+  const wasEligibleForBonfireBenefit = useRef(false)
   const stageIndex = stages.findIndex(({ id }) => id === stage)
   const canSearch = Boolean(draft.checkIn && draft.checkOut && draft.checkOut > draft.checkIn)
   const selectedProduct = availability?.find((product) => product.productId === draft.selectedProductId)
@@ -111,6 +112,14 @@ export function BookingApp() {
   const hasValidContactDetails = guestName.trim().length >= 2 && /\S+@\S+\.\S+/.test(guestEmail) && /^\+[1-9][0-9]{7,14}$/.test(guestPhoneE164)
 
   const partyTotal = draft.party.adults + draft.party.children7To12 + draft.party.children0To6
+  const hasBonfireMealBenefit = partyTotal >= 7 && (mealPlan === 'all_meals' || mealPlan === 'breakfast_plus_one')
+
+  useEffect(() => {
+    if (stage === 'personalise' && hasBonfireMealBenefit && !wasEligibleForBonfireBenefit.current && bonfireSessions === 0) {
+      setBonfireSessions(1)
+    }
+    wasEligibleForBonfireBenefit.current = stage === 'personalise' && hasBonfireMealBenefit
+  }, [stage, hasBonfireMealBenefit, bonfireSessions])
 
   function invalidateQuote() {
     setQuote(null)
@@ -253,13 +262,13 @@ export function BookingApp() {
               <NumericField label="Children (0–6)" min={0} max={requestedGuestCount - 1} value={draft.party.children0To6} onCommit={(value) => setPartyBreakdown('children0To6', value)} help="Complimentary, but included in capacity." />
               <NumericField label="Pets" min={0} max={3} value={draft.party.pets} onCommit={(value) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, pets: value } }) }} />
               <label>Meal plan<select value={mealPlan} onChange={(event) => { invalidateQuote(); setMealPlan(event.target.value as QuoteInput['mealPlan']) }} disabled={selectedProduct.sellableKind === 'entire_property'}>{selectedProduct.sellableKind !== 'entire_property' && <><option value="breakfast">Breakfast only</option><option value="breakfast_plus_one">Breakfast + 1 meal</option></>}<option value="all_meals">All meals</option></select></label>
-              <NumericField label="Bonfire + barbecue evenings" min={0} max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onCommit={(value) => { invalidateQuote(); setBonfireSessions(value) }} />
+              <NumericField label="Bonfire + barbecue evenings" min={0} max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onCommit={(value) => { invalidateQuote(); setBonfireSessions(value) }} help={hasBonfireMealBenefit ? 'One evening has been added at no extra cost. Additional evenings are ₹500 per guest.' : '₹500 per guest, per evening.'} />
               <NumericField label="Guests joining the lake trip" min={0} max={requestedGuestCount} value={lakeTripGuests} onCommit={(value) => { invalidateQuote(); setLakeTripGuests(value) }} help="₹500 covers up to 2 guests; ₹250 for each additional guest." />
             </div>
             <p className="setup-note">{partyTotal} of {requestedGuestCount} guests allocated. Price updates automatically as you make changes.</p>
             {quoteError && <p className="form-error">{quoteError}</p>}
             {isQuoting && <p className="setup-note" aria-live="polite">Updating your price…</p>}
-            {quote && <section className="quote-card" aria-live="polite"><h2>Your live stay estimate</h2>{quote.items.filter((item) => item.amount_paise > 0 || item.label.includes('(included)')).map((item) => <div className="quote-line" key={item.label}><span>{item.label}{item.quantity ? ` × ${item.quantity}` : ''}</span><strong>{item.label.includes('(included)') ? 'Included' : formatInrFromPaise(item.amount_paise)}</strong></div>)}<div className="quote-total"><span>Total</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>{quote.notice}</p><button className="secondary" onClick={() => setStage('details')}>Continue</button></section>}
+            {quote && <section className="quote-card" aria-live="polite"><h2>Your live stay estimate</h2>{quote.items.filter((item) => item.amount_paise > 0 || item.label.endsWith('(included)')).map((item) => <div className="quote-line" key={item.label}><span>{item.label}{item.quantity ? ` × ${item.quantity}` : ''}</span><strong>{item.label.endsWith('(included)') ? 'Included' : formatInrFromPaise(item.amount_paise)}</strong></div>)}<div className="quote-total"><span>Total</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>{quote.notice}</p><button className="secondary" onClick={() => setStage('details')}>Continue</button></section>}
             <button className="text-button" onClick={() => setStage('search')}>Change dates, stay or total guests</button>
           </section>
         )}

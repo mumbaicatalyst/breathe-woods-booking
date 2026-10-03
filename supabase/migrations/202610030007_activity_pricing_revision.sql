@@ -123,7 +123,7 @@ begin
       jsonb_build_object('label', initcap(replace(p_meal_plan, '_', ' ')) || ' stay', 'amount_paise', v_base_total),
       jsonb_build_object('label', 'Additional adults', 'quantity', v_adult_extra_count, 'amount_paise', v_adult_extra_total),
       jsonb_build_object('label', 'Children aged 7–12 above included allowance', 'quantity', v_child_extra_count, 'amount_paise', v_child_extra_total),
-      jsonb_build_object('label', case when v_included_bonfire_sessions > 0 then 'Bonfire + barbecue (included)' else 'Bonfire + barbecue' end, 'quantity', p_bonfire_sessions, 'amount_paise', v_bonfire_total),
+      jsonb_build_object('label', case when v_included_bonfire_sessions > 0 and v_chargeable_bonfire_sessions > 0 then 'Bonfire + barbecue (1 included; ' || v_chargeable_bonfire_sessions || ' additional)' when v_included_bonfire_sessions > 0 then 'Bonfire + barbecue (included)' else 'Bonfire + barbecue' end, 'quantity', p_bonfire_sessions, 'amount_paise', v_bonfire_total),
       jsonb_build_object('label', 'Lake trip', 'quantity', p_lake_trip_guests, 'amount_paise', v_lake_total),
       jsonb_build_object('label', 'Pets', 'quantity', p_pets, 'amount_paise', 0)
     ),
