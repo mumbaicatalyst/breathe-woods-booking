@@ -19,7 +19,7 @@ begin
   set amount_paise = 50000,
       pricing_unit = 'per_guest',
       description = '₹500 per guest for parties of 6 or fewer. Groups of 7+ receive the package with qualifying meal plans.',
-      configuration = jsonb_build_object('small_group_threshold', 6, 'included_group_minimum', 7, 'qualifying_meal_plans', jsonb_build_array('breakfast_plus_one', 'all_meals'), 'breakfast_plus_one_included_sessions', 1)
+      configuration = jsonb_build_object('small_group_threshold', 6, 'included_group_minimum', 7, 'qualifying_meal_plans', jsonb_build_array('breakfast_plus_one', 'all_meals'), 'included_sessions_per_stay', 1)
   where property_id = property_uuid and code = 'bonfire-bbq';
 end;
 $$;
@@ -105,9 +105,7 @@ begin
 
   if p_bonfire_sessions > 0 then
     select amount_paise into v_bonfire_rate from add_ons where property_id = v_product.property_id and code = 'bonfire-bbq' and active;
-    if v_party_size >= 7 and p_meal_plan = 'all_meals' then
-      v_included_bonfire_sessions := p_bonfire_sessions;
-    elsif v_party_size >= 7 and p_meal_plan = 'breakfast_plus_one' then
+    if v_party_size >= 7 and p_meal_plan in ('all_meals', 'breakfast_plus_one') then
       v_included_bonfire_sessions := least(p_bonfire_sessions, 1);
     end if;
     v_chargeable_bonfire_sessions := p_bonfire_sessions - v_included_bonfire_sessions;
@@ -129,7 +127,7 @@ begin
       jsonb_build_object('label', 'Lake trip', 'quantity', p_lake_trip_guests, 'amount_paise', v_lake_total),
       jsonb_build_object('label', 'Pets', 'quantity', p_pets, 'amount_paise', 0)
     ),
-    'notice', case when v_included_bonfire_sessions > 0 and p_meal_plan = 'breakfast_plus_one' then 'Your first bonfire evening is included; dinner will be used as the included meal for that evening.' when v_included_bonfire_sessions > 0 then 'Bonfire + barbecue is included with your qualifying meal plan.' else 'This is a live quote only. Availability is held when payment begins.' end
+    'notice', case when v_included_bonfire_sessions > 0 and p_meal_plan = 'breakfast_plus_one' then 'Your first bonfire evening is included; dinner will be used as the included meal for that evening. Additional bonfire evenings are chargeable.' when v_included_bonfire_sessions > 0 then 'Your first bonfire + barbecue evening is included with your qualifying meal plan. Additional evenings are chargeable.' else 'This is a live quote only. Availability is held when payment begins.' end
   );
 end;
 $$;
