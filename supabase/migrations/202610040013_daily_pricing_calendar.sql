@@ -66,10 +66,10 @@ $$;
 create or replace function public.room_units_for_product(p_product public.bookable_products)
 returns integer language sql immutable as $$
   select case
-    when p.code = 'zen-villa' then 2
-    when p.code = 'bougan-villa' then 3
-    when p.code = 'entire-property' then 5
-    when p.inventory_mode = 'child_rooms' then p.room_units_required
+    when (p_product).code = 'zen-villa' then 2
+    when (p_product).code = 'bougan-villa' then 3
+    when (p_product).code = 'entire-property' then 5
+    when (p_product).inventory_mode = 'child_rooms' then (p_product).room_units_required
     else 1
   end
 $$;
