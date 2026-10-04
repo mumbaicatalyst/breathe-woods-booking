@@ -18,20 +18,20 @@ export type ReservationDetail = {
 export async function getOwnerCalendar(start: string, end: string) {
   if (!supabase) throw new Error('UAT connection has not been configured.')
   const { data, error } = await supabase.rpc('get_owner_calendar', { p_start: start, p_end: end })
-  if (error) throw error
+  if (error) throw new Error(error.message)
   return data as CalendarRow[]
 }
 
 export async function getOwnerReservationDetail(reservationId: string) {
   if (!supabase) throw new Error('UAT connection has not been configured.')
   const { data, error } = await supabase.rpc('get_owner_reservation_detail', { p_reservation_id: reservationId })
-  if (error) throw error
+  if (error) throw new Error(error.message)
   return data as ReservationDetail
 }
 
 export async function simulateUatSuccessfulPayment(reservationId: string) {
   if (!supabase) throw new Error('UAT connection has not been configured.')
   const { data, error } = await supabase.rpc('simulate_uat_successful_payment', { p_reservation_id: reservationId })
-  if (error) throw error
+  if (error) throw new Error(error.message)
   return data as { status: string; reference?: string; already_confirmed?: boolean }
 }
