@@ -11,11 +11,14 @@ create table if not exists public.daily_pricing_calendar (
   single_room_paise integer not null check (single_room_paise >= 0),
   extra_adult_paise integer not null check (extra_adult_paise >= 0),
   extra_child_7_to_12_paise integer not null check (extra_child_7_to_12_paise >= 0),
+  minimum_stay_nights integer not null default 1 check (minimum_stay_nights > 0),
   individual_rooms_bookable boolean not null default true,
   individual_room_minimum_nights integer not null default 1 check (individual_room_minimum_nights > 0),
   buyout_discount_eligible boolean not null default false,
-  buyout_one_night_discount_bps integer not null default 0 check (buyout_one_night_discount_bps between 0 and 10000),
-  buyout_two_plus_nights_discount_bps integer not null default 0 check (buyout_two_plus_nights_discount_bps between 0 and 10000),
+  buyout_one_night_discount_bps_group_10 integer not null default 0 check (buyout_one_night_discount_bps_group_10 between 0 and 10000),
+  buyout_one_night_discount_bps_group_15 integer not null default 0 check (buyout_one_night_discount_bps_group_15 between 0 and 10000),
+  buyout_two_plus_nights_discount_bps_group_10 integer not null default 0 check (buyout_two_plus_nights_discount_bps_group_10 between 0 and 10000),
+  buyout_two_plus_nights_discount_bps_group_15 integer not null default 0 check (buyout_two_plus_nights_discount_bps_group_15 between 0 and 10000),
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -115,6 +118,7 @@ begin
     and (p.sellable_kind <> 'room' or daily.individual_rooms_bookable)
   group by p.id, p.code, p.name, p.sellable_kind, p.max_overnight_guests, p.included_chargeable_guests
   having count(*) = p_check_out - p_check_in
+    and (p_check_out - p_check_in) >= max(daily.minimum_stay_nights)
     and (p.sellable_kind <> 'room' or (p_check_out - p_check_in) >= max(daily.individual_room_minimum_nights))
   order by min(p.display_order);
 end;
@@ -197,6 +201,7 @@ declare
   v_chargeable_bonfire integer := 0;
   v_nightly jsonb := '[]'::jsonb;
   v_buyout_base integer;
+  v_buyout_guests integer;
   v_discount_bps integer;
 begin
   select * into v_product from bookable_products where id = p_product_id and active;
@@ -223,11 +228,16 @@ begin
     where property_id = v_product.property_id and stay_date >= p_check_in and stay_date < p_check_out
     order by stay_date
   loop
+    if v_nights < v_day.minimum_stay_nights then raise exception 'This date requires a minimum % night stay', v_day.minimum_stay_nights; end if;
     if v_product.code = 'entire-property' and v_day.buyout_discount_eligible then
+      v_buyout_guests := least(greatest(v_chargeable_party, coalesce((v_settings -> 'full_property' ->> 'minimum_paying_guests')::integer, 10)), 15);
       v_buyout_base := coalesce((v_settings -> 'full_property' ->> 'base_paise')::integer, 5000000)
-        + greatest(v_chargeable_party - coalesce((v_settings -> 'full_property' ->> 'minimum_paying_guests')::integer, 10), 0)
+        + greatest(v_buyout_guests - coalesce((v_settings -> 'full_property' ->> 'minimum_paying_guests')::integer, 10), 0)
           * coalesce((v_settings -> 'full_property' ->> 'additional_paying_guest_paise')::integer, 350000);
-      v_discount_bps := case when v_nights >= 2 then v_day.buyout_two_plus_nights_discount_bps else v_day.buyout_one_night_discount_bps end;
+      v_discount_bps := case when v_nights >= 2
+        then round(v_day.buyout_two_plus_nights_discount_bps_group_10 + ((v_buyout_guests - 10) * (v_day.buyout_two_plus_nights_discount_bps_group_15 - v_day.buyout_two_plus_nights_discount_bps_group_10) / 5.0))::integer
+        else round(v_day.buyout_one_night_discount_bps_group_10 + ((v_buyout_guests - 10) * (v_day.buyout_one_night_discount_bps_group_15 - v_day.buyout_one_night_discount_bps_group_10) / 5.0))::integer
+      end;
       v_room_base := round(v_buyout_base * (10000 - v_discount_bps) / 10000.0)::integer;
       v_adult_extra := 0; v_child_extra := 0; v_meal_total := 0;
     else
@@ -287,18 +297,20 @@ $$;
 -- single-date and date-range editing; the CSV importer will use the same schema.
 create or replace function public.upsert_owner_daily_rate(
   p_stay_date date, p_tier_code text, p_couple_room_paise integer, p_single_room_paise integer,
-  p_extra_adult_paise integer, p_extra_child_7_to_12_paise integer, p_individual_rooms_bookable boolean,
+  p_extra_adult_paise integer, p_extra_child_7_to_12_paise integer, p_minimum_stay_nights integer, p_individual_rooms_bookable boolean,
   p_individual_room_minimum_nights integer, p_buyout_discount_eligible boolean,
-  p_buyout_one_night_discount_bps integer, p_buyout_two_plus_nights_discount_bps integer, p_notes text default null
+  p_buyout_one_night_discount_bps_group_10 integer, p_buyout_one_night_discount_bps_group_15 integer,
+  p_buyout_two_plus_nights_discount_bps_group_10 integer, p_buyout_two_plus_nights_discount_bps_group_15 integer,
+  p_notes text default null
 )
 returns void language plpgsql security definer set search_path = public as $$
 declare v_property_id uuid; v_role dashboard_role;
 begin
   select property_id, role into v_property_id, v_role from owner_profiles where user_id = auth.uid();
   if v_property_id is null or v_role = 'viewer' then raise exception 'You do not have permission to change pricing'; end if;
-  insert into daily_pricing_calendar (property_id, stay_date, tier_code, couple_room_paise, single_room_paise, extra_adult_paise, extra_child_7_to_12_paise, individual_rooms_bookable, individual_room_minimum_nights, buyout_discount_eligible, buyout_one_night_discount_bps, buyout_two_plus_nights_discount_bps, notes)
-  values (v_property_id, p_stay_date, p_tier_code, p_couple_room_paise, p_single_room_paise, p_extra_adult_paise, p_extra_child_7_to_12_paise, p_individual_rooms_bookable, p_individual_room_minimum_nights, p_buyout_discount_eligible, p_buyout_one_night_discount_bps, p_buyout_two_plus_nights_discount_bps, p_notes)
-  on conflict (property_id, stay_date) do update set tier_code = excluded.tier_code, couple_room_paise = excluded.couple_room_paise, single_room_paise = excluded.single_room_paise, extra_adult_paise = excluded.extra_adult_paise, extra_child_7_to_12_paise = excluded.extra_child_7_to_12_paise, individual_rooms_bookable = excluded.individual_rooms_bookable, individual_room_minimum_nights = excluded.individual_room_minimum_nights, buyout_discount_eligible = excluded.buyout_discount_eligible, buyout_one_night_discount_bps = excluded.buyout_one_night_discount_bps, buyout_two_plus_nights_discount_bps = excluded.buyout_two_plus_nights_discount_bps, notes = excluded.notes, updated_at = now();
+  insert into daily_pricing_calendar (property_id, stay_date, tier_code, couple_room_paise, single_room_paise, extra_adult_paise, extra_child_7_to_12_paise, minimum_stay_nights, individual_rooms_bookable, individual_room_minimum_nights, buyout_discount_eligible, buyout_one_night_discount_bps_group_10, buyout_one_night_discount_bps_group_15, buyout_two_plus_nights_discount_bps_group_10, buyout_two_plus_nights_discount_bps_group_15, notes)
+  values (v_property_id, p_stay_date, p_tier_code, p_couple_room_paise, p_single_room_paise, p_extra_adult_paise, p_extra_child_7_to_12_paise, p_minimum_stay_nights, p_individual_rooms_bookable, p_individual_room_minimum_nights, p_buyout_discount_eligible, p_buyout_one_night_discount_bps_group_10, p_buyout_one_night_discount_bps_group_15, p_buyout_two_plus_nights_discount_bps_group_10, p_buyout_two_plus_nights_discount_bps_group_15, p_notes)
+  on conflict (property_id, stay_date) do update set tier_code = excluded.tier_code, couple_room_paise = excluded.couple_room_paise, single_room_paise = excluded.single_room_paise, extra_adult_paise = excluded.extra_adult_paise, extra_child_7_to_12_paise = excluded.extra_child_7_to_12_paise, minimum_stay_nights = excluded.minimum_stay_nights, individual_rooms_bookable = excluded.individual_rooms_bookable, individual_room_minimum_nights = excluded.individual_room_minimum_nights, buyout_discount_eligible = excluded.buyout_discount_eligible, buyout_one_night_discount_bps_group_10 = excluded.buyout_one_night_discount_bps_group_10, buyout_one_night_discount_bps_group_15 = excluded.buyout_one_night_discount_bps_group_15, buyout_two_plus_nights_discount_bps_group_10 = excluded.buyout_two_plus_nights_discount_bps_group_10, buyout_two_plus_nights_discount_bps_group_15 = excluded.buyout_two_plus_nights_discount_bps_group_15, notes = excluded.notes, updated_at = now();
 end;
 $$;
 
@@ -383,7 +395,7 @@ revoke all on function public.get_booking_quote(uuid, date, date, integer, integ
 grant execute on function public.get_booking_quote(uuid, date, date, integer, integer, integer, integer, text, integer, integer, integer) to anon, authenticated;
 revoke all on function public.get_booking_quote_bundle_aware(uuid, date, date, integer, integer, integer, integer, text, integer, integer, integer) from public;
 grant execute on function public.get_booking_quote_bundle_aware(uuid, date, date, integer, integer, integer, integer, text, integer, integer, integer) to anon, authenticated;
-revoke all on function public.upsert_owner_daily_rate(date, text, integer, integer, integer, integer, boolean, integer, boolean, integer, integer, text) from public;
-grant execute on function public.upsert_owner_daily_rate(date, text, integer, integer, integer, integer, boolean, integer, boolean, integer, integer, text) to authenticated;
+revoke all on function public.upsert_owner_daily_rate(date, text, integer, integer, integer, integer, integer, boolean, integer, boolean, integer, integer, integer, integer, text) from public;
+grant execute on function public.upsert_owner_daily_rate(date, text, integer, integer, integer, integer, integer, boolean, integer, boolean, integer, integer, integer, integer, text) to authenticated;
 revoke all on function public.create_uat_booking_hold_bundle_aware(uuid, date, date, integer, integer, integer, integer, text, integer, integer, integer, text, text, text, boolean) from public;
 grant execute on function public.create_uat_booking_hold_bundle_aware(uuid, date, date, integer, integer, integer, integer, text, integer, integer, integer, text, text, text, boolean) to anon, authenticated;
