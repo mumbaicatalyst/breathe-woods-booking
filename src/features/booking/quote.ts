@@ -1,7 +1,24 @@
 import { supabase } from '../../lib/supabase'
 
 export type QuoteItem = { label: string; quantity?: number; amount_paise: number }
-export type BookingQuote = { currency: 'INR'; nights: number; total_paise: number; items: QuoteItem[]; notice: string }
+export type NightlyQuote = {
+  date: string
+  tier: string
+  room_base_paise: number
+  extra_adult_paise: number
+  extra_child_paise: number
+  meal_upgrade_paise: number
+  total_paise: number
+}
+
+export type BookingQuote = {
+  currency: 'INR'
+  nights: number
+  total_paise: number
+  items: QuoteItem[]
+  notice: string
+  nightly_breakdown?: NightlyQuote[]
+}
 
 export type QuoteInput = {
   productId: string; checkIn: string; checkOut: string; adults: number; children7To12: number; children0To6: number; pets: number; mealPlan: 'breakfast' | 'breakfast_plus_one' | 'all_meals'; bonfireSessions: number; lakeTripGuests: number

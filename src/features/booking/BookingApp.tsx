@@ -4,6 +4,7 @@ import { isSupabaseConfigured } from '../../lib/config'
 import { formatInrFromPaise, getAvailableProducts, type AvailableProduct } from './availability'
 import { getBookingQuote, type BookingQuote, type QuoteInput } from './quote'
 import { createBookingHold, type BookingHold } from './hold'
+import { RateCalendar } from './RateCalendar'
 
 const initialDraft: BookingDraft = {
   checkIn: '',
@@ -32,6 +33,10 @@ function stayKindLabel(kind: string) {
   if (kind === 'room_bundle') return 'Two bedrooms'
   if (kind === 'room') return 'Room'
   return 'Villa'
+}
+
+function formatStayDate(value: string) {
+  return new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${value}T12:00:00`))
 }
 
 type NumericFieldProps = {
@@ -235,9 +240,16 @@ export function BookingApp() {
             <p className="eyebrow">Private stays in the woods of Raigad</p>
             <h1 id="booking-title">Find your escape</h1>
             <p className="intro">Choose dates and your total party. We’ll show only stays that are genuinely available.</p>
-            <div className="form-grid">
-              <label>Check-in<input type="date" value={draft.checkIn} onChange={(event) => { invalidateQuote(); setAvailability(null); setDraft({ ...draft, checkIn: event.target.value }) }} /></label>
-              <label>Check-out<input type="date" min={draft.checkIn || undefined} value={draft.checkOut} onChange={(event) => { invalidateQuote(); setAvailability(null); setDraft({ ...draft, checkOut: event.target.value }) }} /></label>
+            <RateCalendar
+              checkIn={draft.checkIn}
+              checkOut={draft.checkOut}
+              onChange={(checkIn, checkOut) => {
+                invalidateQuote()
+                setAvailability(null)
+                setDraft({ ...draft, checkIn, checkOut })
+              }}
+            />
+            <div className="form-grid search-guest-count">
               <NumericField label="Total guests" min={1} max={15} value={requestedGuestCount} onCommit={setTotalGuests} help="You’ll confirm the adult and child breakdown next." />
             </div>
             <button className="primary" disabled={!canSearch || !isSupabaseConfigured || isSearching} onClick={searchAvailability}>{isSearching ? 'Checking availability…' : 'Check availability'}</button>
@@ -250,7 +262,7 @@ export function BookingApp() {
                 {availability.length === 0 ? <p>Try other dates, a smaller party, or message the host for a special request.</p> : availability.map((product) => (
                   <article className="stay-option" key={product.productId}>
                     <div><p className="option-kind">{stayKindLabel(product.sellableKind)}</p><h3>{product.productName}</h3><p>{product.sellableKind === 'room_bundle' ? 'Up to 4 guests · 2 of 3 bedrooms; the remaining bedroom may be booked separately.' : `Up to ${product.maxOvernightGuests} overnight guests`}</p></div>
-                    <div className="option-price"><strong>From {formatInrFromPaise(product.fromAmountPaise)}</strong><span>per night</span><button className="secondary" onClick={() => { invalidateQuote(); setDraft({ ...draft, selectedProductId: product.productId }); setMealPlan(product.sellableKind === 'entire_property' ? 'all_meals' : 'breakfast'); setStage('personalise') }}>Select</button></div>
+                    <div className="option-price"><strong>From {formatInrFromPaise(product.fromAmountPaise)}</strong><span>{product.sellableKind === 'room_bundle' ? 'per night · two bedrooms' : 'per night'}</span><button className="secondary" onClick={() => { invalidateQuote(); setDraft({ ...draft, selectedProductId: product.productId }); setMealPlan(product.sellableKind === 'entire_property' ? 'all_meals' : 'breakfast'); setStage('personalise') }}>Select</button></div>
                   </article>
                 ))}
               </section>
@@ -275,7 +287,19 @@ export function BookingApp() {
             <p className="setup-note">{partyTotal} of {requestedGuestCount} guests allocated. Price updates automatically as you make changes.</p>
             {quoteError && <p className="form-error">{quoteError}</p>}
             {isQuoting && <p className="setup-note" aria-live="polite">Updating your price…</p>}
-            {quote && <section className="quote-card" aria-live="polite"><h2>Your live stay estimate</h2>{quote.items.filter((item) => item.amount_paise > 0 || item.label.endsWith('(included)')).map((item) => <div className="quote-line" key={item.label}><span>{item.label}{item.quantity ? ` × ${item.quantity}` : ''}</span><strong>{item.label.endsWith('(included)') ? 'Included' : formatInrFromPaise(item.amount_paise)}</strong></div>)}<div className="quote-total"><span>Total</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>{quote.notice}</p><button className="secondary" onClick={() => setStage('details')}>Continue</button></section>}
+            {quote && <section className="quote-card" aria-live="polite">
+              <h2>Your live stay estimate</h2>
+              {quote.nightly_breakdown && <section className="nightly-rates" aria-label="Nightly rate breakdown">
+                <p className="nightly-rates-heading">Your nightly price</p>
+                {quote.nightly_breakdown.map((night) => <div className="nightly-rate" key={night.date}>
+                  <span><strong>{formatStayDate(night.date)}</strong><small>{night.tier.replace(/_/g, ' ')}</small></span>
+                  <strong>{formatInrFromPaise(night.total_paise)}</strong>
+                </div>)}
+              </section>}
+              {quote.items.filter((item) => item.amount_paise > 0 || item.label.endsWith('(included)')).map((item) => <div className="quote-line" key={item.label}><span>{item.label}{item.quantity ? ` × ${item.quantity}` : ''}</span><strong>{item.label.endsWith('(included)') ? 'Included' : formatInrFromPaise(item.amount_paise)}</strong></div>)}
+              <div className="quote-total"><span>Total</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div>
+              <p>{quote.notice}</p><button className="secondary" onClick={() => setStage('details')}>Continue</button>
+            </section>}
             <button className="text-button" onClick={() => setStage('search')}>Change dates, stay or total guests</button>
           </section>
         )}
