@@ -28,3 +28,10 @@ export async function getOwnerReservationDetail(reservationId: string) {
   if (error) throw error
   return data as ReservationDetail
 }
+
+export async function simulateUatSuccessfulPayment(reservationId: string) {
+  if (!supabase) throw new Error('UAT connection has not been configured.')
+  const { data, error } = await supabase.rpc('simulate_uat_successful_payment', { p_reservation_id: reservationId })
+  if (error) throw error
+  return data as { status: string; reference?: string; already_confirmed?: boolean }
+}
