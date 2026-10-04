@@ -80,7 +80,7 @@ begin
   if not found then raise exception 'This stay is no longer available'; end if;
   if length(trim(coalesce(p_guest_name, ''))) < 2 then raise exception 'Please enter the lead guest name'; end if;
   if position('@' in coalesce(p_guest_email, '')) < 2 then raise exception 'Please enter a valid email address'; end if;
-  if coalesce(p_guest_phone, '') !~ '^\\+[1-9][0-9]{7,14}$' then raise exception 'Please enter a valid mobile number with country code'; end if;
+  if coalesce(p_guest_phone, '') !~ '^\+[1-9][0-9]{7,14}$' then raise exception 'Please enter a valid mobile number with country code'; end if;
 
   perform public.lock_property_inventory(v_product.property_id);
   perform public.release_expired_payment_holds(v_product.property_id);
