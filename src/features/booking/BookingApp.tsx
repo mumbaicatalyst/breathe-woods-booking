@@ -96,6 +96,7 @@ export function BookingApp() {
   const [stage, setStage] = useState<BookingStage>('search')
   const [draft, setDraft] = useState<BookingDraft>(initialDraft)
   const [requestedGuestCount, setRequestedGuestCount] = useState(2)
+  const [requestedRooms, setRequestedRooms] = useState(1)
   const [availability, setAvailability] = useState<AvailableProduct[] | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [isSearching, setIsSearching] = useState(false)
@@ -104,6 +105,7 @@ export function BookingApp() {
   const [lakeTripGuests, setLakeTripGuests] = useState(0)
   const [quote, setQuote] = useState<BookingQuote | null>(null)
   const [quoteError, setQuoteError] = useState<string | null>(null)
+  const [guestError, setGuestError] = useState<string | null>(null)
   const [isQuoting, setIsQuoting] = useState(false)
   const [guestName, setGuestName] = useState('')
   const [guestEmail, setGuestEmail] = useState('')
@@ -125,6 +127,17 @@ export function BookingApp() {
 
   const partyTotal = draft.party.adults + draft.party.children7To12 + draft.party.children0To6
   const hasBonfireMealBenefit = partyTotal >= 7 && (mealPlan === 'all_meals' || mealPlan === 'breakfast_plus_one')
+  const isRoomStay = selectedProduct?.sellableKind === 'room'
+  const selectedStayCapacity = selectedProduct?.maxOvernightGuests ?? 15
+  const maxAdults = isRoomStay ? 2 : Math.max(1, selectedStayCapacity - draft.party.children7To12 - draft.party.children0To6)
+  const maxChildren7To12 = isRoomStay ? Math.min(1, Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children0To6)) : Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children0To6)
+  const maxChildren0To6 = isRoomStay ? Math.min(2, Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children7To12)) : Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children7To12)
+  const displayedAvailability = availability?.filter((product) => {
+    if (requestedRooms === 1) return product.sellableKind === 'room' || product.sellableKind === 'villa'
+    if (requestedRooms === 2) return ['zen-villa', 'bougan-two-rooms', 'bougan-villa'].includes(product.productCode)
+    if (requestedRooms === 3) return product.productCode === 'bougan-villa'
+    return product.productCode === 'entire-property'
+  })
 
   useEffect(() => {
     if (stage === 'personalise' && hasBonfireMealBenefit && !wasEligibleForBonfireBenefit.current && bonfireSessions === 0) {
@@ -177,20 +190,15 @@ export function BookingApp() {
   }, [stage, draft.selectedProductId, draft.checkIn, draft.checkOut, draft.party.adults, draft.party.children7To12, draft.party.children0To6, draft.party.pets, mealPlan, bonfireSessions, lakeTripGuests])
 
   function setPartyBreakdown(category: 'adults' | 'children7To12' | 'children0To6', enteredValue: number) {
-    const total = requestedGuestCount
     const next = { ...draft.party }
-    if (category === 'adults') {
-      next.adults = clamp(enteredValue, 1, total)
-      let remainingChildPlaces = total - next.adults
-      next.children7To12 = Math.min(next.children7To12, remainingChildPlaces)
-      remainingChildPlaces -= next.children7To12
-      next.children0To6 = Math.min(next.children0To6, remainingChildPlaces)
-    } else {
-      next[category] = clamp(enteredValue, 0, total - 1)
-      const otherChildCategory = category === 'children7To12' ? 'children0To6' : 'children7To12'
-      next[otherChildCategory] = Math.min(next[otherChildCategory], total - 1 - next[category])
-      next.adults = total - next.children7To12 - next.children0To6
+    next[category] = enteredValue
+    const nextTotal = next.adults + next.children7To12 + next.children0To6
+    const invalidRoomFamily = isRoomStay && (next.adults > 2 || next.children7To12 > 1 || next.children0To6 > 2 || next.children7To12 + next.children0To6 > 2)
+    if (nextTotal > selectedStayCapacity || invalidRoomFamily) {
+      setGuestError(isRoomStay ? 'A room accommodates up to two adults and two children, with at most one child aged 7–12.' : 'This stay accommodates up to ' + selectedStayCapacity + ' overnight guests.')
+      return
     }
+    setGuestError(null)
     invalidateQuote()
     setDraft({ ...draft, party: next })
   }
@@ -250,16 +258,17 @@ export function BookingApp() {
               }}
             />
             <div className="form-grid search-guest-count">
+              <NumericField label="Rooms" min={1} max={5} value={requestedRooms} onCommit={(value) => { setRequestedRooms(value); setAvailability(null) }} help="Choose how many bedrooms you need." />
               <NumericField label="Total guests" min={1} max={15} value={requestedGuestCount} onCommit={setTotalGuests} help="You’ll confirm the adult and child breakdown next." />
             </div>
             <button className="primary" disabled={!canSearch || !isSupabaseConfigured || isSearching} onClick={searchAvailability}>{isSearching ? 'Checking availability…' : 'Check availability'}</button>
             {!isSupabaseConfigured && <p className="setup-note">Live availability will appear here once the UAT inventory connection is configured. This clean build intentionally contains no seeded stays or test calendar.</p>}
             {isSupabaseConfigured && <p className="setup-note">UAT connection is configured locally. Live availability activates after the booking schema and inventory configuration are applied.</p>}
             {searchError && <p className="form-error">{searchError}</p>}
-            {availability && (
+            {displayedAvailability && (
               <section className="availability-results" aria-live="polite">
-                <h2>{availability.length ? 'Available stays' : 'No stays available for those dates'}</h2>
-                {availability.length === 0 ? <p>Try other dates, a smaller party, or message the host for a special request.</p> : availability.map((product) => (
+                <h2>{displayedAvailability.length ? 'Available stays' : 'No stays available for those dates'}</h2>
+                {displayedAvailability.length === 0 ? <p>Try other dates, a smaller party, or message the host for a special request.</p> : displayedAvailability.map((product) => (
                   <article className="stay-option" key={product.productId}>
                     <div><p className="option-kind">{stayKindLabel(product.sellableKind)}</p><h3>{product.productName}</h3><p>{product.sellableKind === 'room_bundle' ? 'Up to 4 guests · 2 of 3 bedrooms; the remaining bedroom may be booked separately.' : `Up to ${product.maxOvernightGuests} overnight guests`}</p></div>
                     <div className="option-price"><strong>From {formatInrFromPaise(product.fromAmountPaise)}</strong><span>{product.sellableKind === 'room_bundle' ? 'per night · two bedrooms' : 'per night'}</span><button className="secondary" onClick={() => { invalidateQuote(); setDraft({ ...draft, selectedProductId: product.productId }); setMealPlan(product.sellableKind === 'entire_property' ? 'all_meals' : 'breakfast'); setStage('personalise') }}>Select</button></div>
@@ -274,17 +283,18 @@ export function BookingApp() {
           <section>
             <p className="eyebrow">{stayKindLabel(selectedProduct.sellableKind)}</p>
             <h1>{selectedProduct.productName}</h1>
-            <p className="intro">Your group is {requestedGuestCount} {requestedGuestCount === 1 ? 'guest' : 'guests'}. Set the age breakdown below; it will always stay within that total. Children aged 0–6 are complimentary but count toward capacity.</p>
+            <p className="intro">Set the adult and child breakdown for this stay. You can adjust your party here; we’ll always keep it within the stay’s capacity. Children aged 0–6 are complimentary but count toward capacity.</p>
             <div className="form-grid">
-              <NumericField label="Adults (13+)" min={1} max={requestedGuestCount} value={draft.party.adults} onCommit={(value) => setPartyBreakdown('adults', value)} />
-              <NumericField label="Children (7–12)" min={0} max={requestedGuestCount - 1} value={draft.party.children7To12} onCommit={(value) => setPartyBreakdown('children7To12', value)} help="Charged only when above the included villa allowance." />
-              <NumericField label="Children (0–6)" min={0} max={requestedGuestCount - 1} value={draft.party.children0To6} onCommit={(value) => setPartyBreakdown('children0To6', value)} help="Complimentary, but included in capacity." />
+              <NumericField label="Adults (13+)" min={1} max={maxAdults} value={draft.party.adults} onCommit={(value) => setPartyBreakdown('adults', value)} />
+              <NumericField label="Children (7–12)" min={0} max={maxChildren7To12} value={draft.party.children7To12} onCommit={(value) => setPartyBreakdown('children7To12', value)} help="Charged only when above the included room allowance." />
+              <NumericField label="Children (0–6)" min={0} max={maxChildren0To6} value={draft.party.children0To6} onCommit={(value) => setPartyBreakdown('children0To6', value)} help="Complimentary, but included in capacity." />
               <NumericField label="Pets" min={0} max={3} value={draft.party.pets} onCommit={(value) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, pets: value } }) }} />
               <label className="meal-plan-field">Meal plan<select value={mealPlan} onChange={(event) => { invalidateQuote(); setMealPlan(event.target.value as QuoteInput['mealPlan']) }} disabled={selectedProduct.sellableKind === 'entire_property'}>{selectedProduct.sellableKind !== 'entire_property' && <><option value="breakfast">Breakfast only</option><option value="breakfast_plus_one">Breakfast + 1 meal</option></>}<option value="all_meals">All meals</option></select></label>
               <NumericField label="Bonfire + barbecue evenings" min={0} max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onCommit={(value) => { invalidateQuote(); setBonfireSessions(value) }} help={hasBonfireMealBenefit ? 'One evening has been added at no extra cost. Additional evenings are ₹500 per guest.' : '₹500 per guest, per evening.'} />
               <NumericField label="Guests joining the lake trip" min={0} max={requestedGuestCount} value={lakeTripGuests} onCommit={(value) => { invalidateQuote(); setLakeTripGuests(value) }} help="₹500 covers up to 2 guests; ₹250 for each additional guest." />
             </div>
-            <p className="setup-note">{partyTotal} of {requestedGuestCount} guests allocated. Price updates automatically as you make changes.</p>
+            <p className="setup-note">{partyTotal} of up to {selectedStayCapacity} guests. Price updates automatically as you make changes.</p>
+            {guestError && <p className="form-error">{guestError}</p>}
             {quoteError && <p className="form-error">{quoteError}</p>}
             {isQuoting && <p className="setup-note" aria-live="polite">Updating your price…</p>}
             {quote && <section className="quote-card" aria-live="polite">
