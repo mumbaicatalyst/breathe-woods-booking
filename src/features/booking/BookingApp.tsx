@@ -95,7 +95,8 @@ function NumericField({ label, value, min, max, onCommit, help }: NumericFieldPr
 export function BookingApp() {
   const [stage, setStage] = useState<BookingStage>('search')
   const [draft, setDraft] = useState<BookingDraft>(initialDraft)
-  const [requestedGuestCount, setRequestedGuestCount] = useState(2)
+  const [searchAdults, setSearchAdults] = useState(2)
+  const [searchChildren, setSearchChildren] = useState(0)
   const [requestedRooms, setRequestedRooms] = useState(1)
   const [availability, setAvailability] = useState<AvailableProduct[] | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
@@ -125,6 +126,7 @@ export function BookingApp() {
   const guestPhoneE164 = `${effectiveCountryCode.replace(/[^0-9+]/g, '')}${guestPhone.replace(/\D/g, '')}`
   const hasValidContactDetails = guestName.trim().length >= 2 && /\S+@\S+\.\S+/.test(guestEmail) && /^\+[1-9][0-9]{7,14}$/.test(guestPhoneE164)
 
+  const requestedGuestCount = searchAdults + searchChildren
   const partyTotal = draft.party.adults + draft.party.children7To12 + draft.party.children0To6
   const hasBonfireMealBenefit = partyTotal >= 7 && (mealPlan === 'all_meals' || mealPlan === 'breakfast_plus_one')
   const isRoomStay = selectedProduct?.sellableKind === 'room'
@@ -133,7 +135,12 @@ export function BookingApp() {
   const maxChildren7To12 = isRoomStay ? Math.min(1, Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children0To6)) : Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children0To6)
   const maxChildren0To6 = isRoomStay ? Math.min(2, Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children7To12)) : Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children7To12)
   const displayedAvailability = availability?.filter((product) => {
-    if (requestedRooms === 1) return product.sellableKind === 'room' || product.sellableKind === 'villa'
+    if (requestedRooms === 1) {
+      const canUseOneFamilyRoom = searchAdults <= 2 && searchChildren <= 2 && requestedGuestCount <= 4
+      return canUseOneFamilyRoom
+        ? product.sellableKind === 'room' || product.sellableKind === 'villa'
+        : ['zen-villa', 'bougan-two-rooms', 'bougan-villa'].includes(product.productCode)
+    }
     if (requestedRooms === 2) return ['zen-villa', 'bougan-two-rooms', 'bougan-villa'].includes(product.productCode)
     if (requestedRooms === 3) return product.productCode === 'bougan-villa'
     return product.productCode === 'entire-property'
@@ -203,11 +210,11 @@ export function BookingApp() {
     setDraft({ ...draft, party: next })
   }
 
-  function setTotalGuests(total: number) {
-    setRequestedGuestCount(total)
+  function setSearchAdultsCount(adults: number) {
+    setSearchAdults(adults)
+    if (adults + searchChildren > 15) setSearchChildren(15 - adults)
     invalidateQuote()
     setAvailability(null)
-    setDraft({ ...draft, party: { ...draft.party, adults: total, children7To12: 0, children0To6: 0 } })
   }
 
   async function createHold() {
@@ -259,7 +266,8 @@ export function BookingApp() {
             />
             <div className="form-grid search-guest-count">
               <NumericField label="Rooms" min={1} max={5} value={requestedRooms} onCommit={(value) => { setRequestedRooms(value); setAvailability(null) }} help="Choose how many bedrooms you need." />
-              <NumericField label="Total guests" min={1} max={15} value={requestedGuestCount} onCommit={setTotalGuests} help="You’ll confirm the adult and child breakdown next." />
+              <NumericField label="Adults" min={1} max={15 - searchChildren} value={searchAdults} onCommit={setSearchAdultsCount} help="Ages 13 and above." />
+              <NumericField label="Children" min={0} max={15 - searchAdults} value={searchChildren} onCommit={(value) => { setSearchChildren(value); invalidateQuote(); setAvailability(null) }} help="Ages 0–12; you’ll confirm ages next." />
             </div>
             <button className="primary" disabled={!canSearch || !isSupabaseConfigured || isSearching} onClick={searchAvailability}>{isSearching ? 'Checking availability…' : 'Check availability'}</button>
             {!isSupabaseConfigured && <p className="setup-note">Live availability will appear here once the UAT inventory connection is configured. This clean build intentionally contains no seeded stays or test calendar.</p>}
@@ -271,7 +279,7 @@ export function BookingApp() {
                 {displayedAvailability.length === 0 ? <p>Try other dates, a smaller party, or message the host for a special request.</p> : displayedAvailability.map((product) => (
                   <article className="stay-option" key={product.productId}>
                     <div><p className="option-kind">{stayKindLabel(product.sellableKind)}</p><h3>{product.productName}</h3><p>{product.sellableKind === 'room_bundle' ? 'Up to 4 guests · 2 of 3 bedrooms; the remaining bedroom may be booked separately.' : `Up to ${product.maxOvernightGuests} overnight guests`}</p></div>
-                    <div className="option-price"><strong>From {formatInrFromPaise(product.fromAmountPaise)}</strong><span>{product.sellableKind === 'room_bundle' ? 'per night · two bedrooms' : 'per night'}</span><button className="secondary" onClick={() => { invalidateQuote(); setDraft({ ...draft, selectedProductId: product.productId }); setMealPlan(product.sellableKind === 'entire_property' ? 'all_meals' : 'breakfast'); setStage('personalise') }}>Select</button></div>
+                    <div className="option-price"><strong>From {formatInrFromPaise(product.fromAmountPaise)}</strong><span>{product.sellableKind === 'room_bundle' ? 'per night · two bedrooms' : 'per night'}</span><button className="secondary" onClick={() => { invalidateQuote(); setDraft({ ...draft, selectedProductId: product.productId, party: { ...draft.party, adults: searchAdults, children7To12: Math.min(searchChildren, 1), children0To6: Math.max(searchChildren - 1, 0) } }); setMealPlan(product.sellableKind === 'entire_property' ? 'all_meals' : 'breakfast'); setStage('personalise') }}>Select</button></div>
                   </article>
                 ))}
               </section>
