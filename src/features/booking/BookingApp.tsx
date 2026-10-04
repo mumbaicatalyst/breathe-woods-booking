@@ -3,7 +3,7 @@ import type { BookingDraft, BookingStage } from '../../lib/types'
 import { isSupabaseConfigured } from '../../lib/config'
 import { formatInrFromPaise, getAvailableProducts, type AvailableProduct } from './availability'
 import { getBookingQuote, type BookingQuote, type QuoteInput } from './quote'
-import { createBookingHold, type BookingHold } from './hold'
+import { createBookingHold, getBookingHoldStatus, type BookingHold, type BookingHoldStatus } from './hold'
 import { RateCalendar } from './RateCalendar'
 
 const initialDraft: BookingDraft = {
@@ -37,6 +37,12 @@ function stayKindLabel(kind: string) {
 
 function formatStayDate(value: string) {
   return new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${value}T12:00:00`))
+}
+
+function formatRemainingTime(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
 type NumericFieldProps = {
@@ -115,6 +121,8 @@ export function BookingApp() {
   const [customCountryCode, setCustomCountryCode] = useState('')
   const [marketingOptIn, setMarketingOptIn] = useState(false)
   const [hold, setHold] = useState<BookingHold | null>(null)
+  const [holdSecondsRemaining, setHoldSecondsRemaining] = useState(0)
+  const [holdStatus, setHoldStatus] = useState<BookingHoldStatus | null>(null)
   const [holdError, setHoldError] = useState<string | null>(null)
   const [isCreatingHold, setIsCreatingHold] = useState(false)
   const quoteRequestId = useRef(0)
@@ -196,6 +204,35 @@ export function BookingApp() {
     return () => window.clearTimeout(timer)
   }, [stage, draft.selectedProductId, draft.checkIn, draft.checkOut, draft.party.adults, draft.party.children7To12, draft.party.children0To6, draft.party.pets, mealPlan, bonfireSessions, lakeTripGuests])
 
+  useEffect(() => {
+    if (stage !== 'payment' || !hold) return
+    let cancelled = false
+    const updateCountdown = () => {
+      const seconds = Math.max(0, Math.ceil((new Date(hold.expires_at).getTime() - Date.now()) / 1000))
+      if (!cancelled) setHoldSecondsRemaining(seconds)
+    }
+    updateCountdown()
+    const timer = window.setInterval(updateCountdown, 1000)
+    return () => { cancelled = true; window.clearInterval(timer) }
+  }, [stage, hold])
+
+  useEffect(() => {
+    if (stage !== 'payment' || !hold) return
+    let cancelled = false
+    const refreshStatus = async () => {
+      try {
+        const nextStatus = await getBookingHoldStatus(hold)
+        if (!cancelled) setHoldStatus(nextStatus)
+      } catch {
+        // Status polling is a convenience after a payment redirect. The expiry
+        // timer remains accurate even if a transient network request fails.
+      }
+    }
+    void refreshStatus()
+    const timer = window.setInterval(() => void refreshStatus(), 5000)
+    return () => { cancelled = true; window.clearInterval(timer) }
+  }, [stage, hold])
+
   function setPartyBreakdown(category: 'adults' | 'children7To12' | 'children0To6', enteredValue: number) {
     const next = { ...draft.party }
     next[category] = enteredValue
@@ -228,6 +265,7 @@ export function BookingApp() {
         mealPlan, bonfireSessions, lakeTripGuests, guestName, guestEmail, guestPhone: guestPhoneE164, marketingOptIn,
       })
       setHold(result)
+      setHoldStatus({ reservation_status: 'pending_payment', payment_state: 'created', expires_at: result.expires_at, total_paise: result.total_paise, reference: result.reference })
       setStage('payment')
     } catch (error) {
       setHoldError(error instanceof Error ? error.message : 'We could not hold this stay. Please try again.')
@@ -324,7 +362,17 @@ export function BookingApp() {
         {stage === 'details' && quote && (
           <section><p className="eyebrow">One last step</p><h1>Your details</h1><p className="intro">We’ll hold this stay for 10 minutes while payment is arranged. It is not confirmed until payment succeeds.</p><div className="form-grid"><label>Full name<input autoComplete="name" value={guestName} onChange={(event) => setGuestName(event.target.value)} /></label><label>Email<input type="email" autoComplete="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} /></label><label className="phone-field">Mobile / WhatsApp number<span className="phone-input"><select aria-label="Country calling code" value={countryCode} onChange={(event) => setCountryCode(event.target.value)}>{countryCodes.map((country) => <option value={country.value} key={country.value}>{country.label} ({country.value})</option>)}<option value="other">Other</option></select>{countryCode === 'other' && <input className="custom-country-code" type="tel" inputMode="tel" aria-label="Country calling code" placeholder="+ code" value={customCountryCode} onChange={(event) => setCustomCountryCode(event.target.value)} />}<input type="tel" inputMode="tel" autoComplete="tel-national" placeholder="Mobile number" value={guestPhone} onChange={(event) => setGuestPhone(event.target.value)} /></span><small>India is selected by default. We’ll use this number for stay updates.</small></label></div><label className="marketing-consent"><input type="checkbox" checked={marketingOptIn} onChange={(event) => setMarketingOptIn(event.target.checked)} /><span>Yes, I’d like occasional Breathe Woods offers and updates by email and WhatsApp.<small>Optional. Booking and stay updates are sent separately. You can opt out at any time.</small></span></label><p className="policy-link">See our <a href="/privacy-and-messaging">Privacy &amp; Messaging Notice</a>.</p><section className="quote-card"><div className="quote-total"><span>Amount to pay</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>By continuing, you acknowledge that this UAT booking is held temporarily and will require payment confirmation.</p></section><button className="primary" onClick={createHold} disabled={isCreatingHold || !hasValidContactDetails}>{isCreatingHold ? 'Holding your stay…' : 'Continue to payment'}</button>{!hasValidContactDetails && <p className="setup-note">Enter your name, email and a valid mobile number to continue.</p>}{holdError && <p className="form-error">{holdError}</p>}<button className="text-button" onClick={() => setStage('personalise')}>Back to price</button></section>
         )}
-        {stage === 'payment' && hold && <section className="empty-state"><p className="eyebrow">Stay held temporarily</p><h1>Payment setup pending</h1><p>Your UAT reference is <strong>{hold.reference}</strong>. This inventory hold expires at {new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }).format(new Date(hold.expires_at))}. PhonePe checkout will replace this screen when its UAT credentials are connected.</p><section className="quote-card"><div className="quote-total"><span>Amount due</span><strong>{formatInrFromPaise(hold.total_paise)}</strong></div></section></section>}
+        {stage === 'payment' && hold && <section className="empty-state">
+          {holdStatus?.reservation_status === 'confirmed' ? <>
+            <p className="eyebrow">Booking confirmed</p><h1>You’re all set.</h1><p>Your payment has been verified and your stay is confirmed. Your Breathe Woods reference is <strong>{hold.reference}</strong>.</p>
+          </> : holdSecondsRemaining <= 0 || holdStatus?.payment_state === 'expired' ? <>
+            <p className="eyebrow">Payment window ended</p><h1>Your stay is available again.</h1><p>No payment was confirmed in time, so the temporary hold has ended. Please search again to create a fresh booking.</p><button className="primary" onClick={() => { setHold(null); setHoldStatus(null); setStage('search') }}>Search again</button>
+          </> : <>
+            <p className="eyebrow">Stay held temporarily</p><h1>Secure payment is next.</h1><p>We’ve reserved this stay while you complete payment. Your hold ends in <strong>{formatRemainingTime(holdSecondsRemaining)}</strong>.</p>
+            <section className="quote-card"><div className="quote-total"><span>Amount due</span><strong>{formatInrFromPaise(hold.total_paise)}</strong></div><p>PhonePe checkout will open here once its UAT credentials are connected. Payment confirmation happens automatically; you will not need to submit a second form.</p></section>
+            <p className="setup-note">UAT reference: <strong>{hold.reference}</strong></p>
+          </>}
+        </section>}
       </section>
 
       <footer className="booking-footer">Need something specific? <a href="mailto:sanil.prashant@gmail.com">Message the host</a></footer>
