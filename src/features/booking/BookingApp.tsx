@@ -92,6 +92,21 @@ function publicSiteHref() {
     : '/'
 }
 
+function bookingReturnHref() {
+  const defaultHref = publicSiteHref()
+  const returnTo = new URLSearchParams(window.location.search).get('returnTo')
+  if (!returnTo) return defaultHref
+
+  try {
+    const candidate = new URL(returnTo, window.location.origin)
+    const isSameSite = candidate.origin === window.location.origin
+    const isLocalWebsite = ['localhost', '127.0.0.1'].includes(candidate.hostname) && candidate.port === '4173'
+    return isSameSite || isLocalWebsite ? candidate.href : defaultHref
+  } catch {
+    return defaultHref
+  }
+}
+
 /**
  * Keeps a temporary text value while someone is editing. The booking model only
  * receives a valid, clamped integer when they finish editing or use +/-.
@@ -355,7 +370,7 @@ export function BookingApp() {
         <a className="booking-wordmark" href={publicSiteHref()} aria-label="Breathe Woods home">
           <img src="/breathe-woods-wordmark.png" alt="Breathe Woods" />
         </a>
-        <span className="header-note">Book your stay</span>
+        <a className="header-note return-link" href={bookingReturnHref()}>← Back to Breathe Woods</a>
       </header>
 
       <section className="booking-card" aria-labelledby="booking-title">
