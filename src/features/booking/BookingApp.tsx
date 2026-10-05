@@ -389,12 +389,19 @@ export function BookingApp() {
               <NumericField label="Children (0–6)" min={0} max={maxChildren0To6} value={draft.party.children0To6} onCommit={(value) => setPartyBreakdown('children0To6', value)} help="Complimentary, but included in capacity." />
               <NumericField label="Pets" min={0} max={3} value={draft.party.pets} onCommit={(value) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, pets: value } }) }} />
               <label className="meal-plan-field">Meal plan<select value={mealPlan} onChange={(event) => { invalidateQuote(); setMealPlan(event.target.value as QuoteInput['mealPlan']) }} disabled={selectedProduct.sellableKind === 'entire_property'}>{selectedProduct.sellableKind !== 'entire_property' && <><option value="breakfast">Breakfast only</option><option value="breakfast_plus_one">Breakfast + 1 meal</option></>}<option value="all_meals">All meals</option></select></label>
-              <NumericField label="Bonfire + barbecue evenings" min={0} max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onCommit={(value) => { invalidateQuote(); setBonfireSessions(value) }} help={hasBonfireMealBenefit ? 'One evening has been added at no extra cost. Additional evenings are ₹500 per chargeable guest; children aged 0–6 join free.' : '₹500 per chargeable guest, per evening; children aged 0–6 join free.'} />
-              <NumericField label="Guests joining the lake trip" min={0} max={activityGuestCount} value={lakeTripGuests} onCommit={(value) => { invalidateQuote(); setLakeTripGuests(value) }} help="₹500 covers up to 2 chargeable guests; ₹250 for each additional one. Children aged 0–6 join free." />
             </div>
-            {experiences.length > 0 && <section className="enhance-stay" aria-labelledby="enhance-stay-title">
+            <section className="enhance-stay" aria-labelledby="enhance-stay-title">
               <header><div><p className="eyebrow">Enhance your stay</p><h2 id="enhance-stay-title">Make the stay your own.</h2></div><p>Optional experiences are added to your estimate now and confirmed with the team.</p></header>
-              <div className="experience-options">{experiences.map((experience) => {
+              <div className="experience-options">
+                <article className={bonfireSessions > 0 ? 'is-selected' : ''}>
+                  <div><h3>Bonfire + barbecue evening</h3><p>{hasBonfireMealBenefit ? 'One evening is included with your qualifying meal plan. Choose additional evenings if you would like them.' : 'A relaxed bonfire and barbecue evening for your party.'}</p><strong>{hasBonfireMealBenefit ? 'First evening included · additional evenings ₹500 per chargeable guest' : '₹500 per chargeable guest, per evening'}</strong><small>Children aged 0–6 join free.</small></div>
+                  <div className="experience-selection"><NumericField label="Evenings" min={0} max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onCommit={(value) => { invalidateQuote(); setBonfireSessions(value) }} /></div>
+                </article>
+                <article className={lakeTripGuests > 0 ? 'is-selected' : ''}>
+                  <div><h3>Lake trip</h3><p>Join a local lake outing during your stay. Choose the chargeable guests joining the trip.</p><strong>₹500 covers up to 2 guests · ₹250 for each additional guest</strong><small>Children aged 0–6 join free.</small></div>
+                  <div className="experience-selection"><NumericField label="Guests joining" min={0} max={activityGuestCount} value={lakeTripGuests} onCommit={(value) => { invalidateQuote(); setLakeTripGuests(value) }} /></div>
+                </article>
+                {experiences.map((experience) => {
                 const quantity = experienceSelections[experience.id] ?? 0
                 const selected = quantity > 0
                 const quantityLabel = experience.pricingUnit === 'per_session' ? 'Sessions' : experience.maxQuantity > 1 ? 'Quantity' : 'Selected'
@@ -405,7 +412,7 @@ export function BookingApp() {
                   </div>
                 </article>
               })}</div>
-            </section>}
+            </section>
             <p className="setup-note">{partyTotal} of up to {selectedStayCapacity} guests. Price updates automatically as you make changes.</p>
             {guestError && <p className="form-error">{guestError}</p>}
             {experienceError && <p className="setup-note">{experienceError}</p>}
