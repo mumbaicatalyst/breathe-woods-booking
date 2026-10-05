@@ -160,15 +160,19 @@ export function BookingApp() {
   // a third adult or one child aged 7–12. Younger children use capacity but
   // are complimentary.
   const maxAdults = isRoomStay
-    ? Math.min(3, Math.max(1, selectedStayCapacity - draft.party.children7To12 - draft.party.children0To6), 3 - draft.party.children7To12)
+    ? Math.min(draft.party.children7To12 + draft.party.children0To6 > 0 ? 2 : 3, Math.max(1, selectedStayCapacity - draft.party.children7To12 - draft.party.children0To6), 3 - draft.party.children7To12)
     : Math.max(1, selectedStayCapacity - draft.party.children7To12 - draft.party.children0To6)
   const maxChildren7To12 = isRoomStay
     ? Math.min(1, Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children0To6), Math.max(0, 3 - draft.party.adults))
     : Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children0To6)
-  const maxChildren0To6 = isRoomStay ? Math.min(2, Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children7To12)) : Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children7To12)
+  const maxChildren0To6 = isRoomStay ? Math.min(draft.party.adults >= 3 ? 0 : 2, Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children7To12)) : Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children7To12)
+  const roomsNeededForAdults = Math.ceil(searchAdults / 3)
+  const roomSearchGuidance = requestedRooms === 1 && searchAdults >= 3 && (searchAdults > 3 || searchChildren > 0)
+    ? `A private room can accommodate either up to 3 adults, or adults with children — not 3 adults plus a child. Please select at least ${roomsNeededForAdults} rooms for this party.`
+    : null
   const displayedAvailability = availability?.filter((product) => {
     if (requestedRooms === 1) {
-      const canUseOneFamilyRoom = searchAdults <= 3 && searchChildren <= 2 && requestedGuestCount <= 4
+      const canUseOneFamilyRoom = searchAdults <= 3 && (searchAdults < 3 || searchChildren === 0) && searchChildren <= 2 && requestedGuestCount <= 4
       return canUseOneFamilyRoom
         ? product.sellableKind === 'room' || product.sellableKind === 'villa'
         : ['zen-villa', 'bougan-two-rooms', 'bougan-villa'].includes(product.productCode)
@@ -239,9 +243,9 @@ export function BookingApp() {
     const next = { ...draft.party }
     next[category] = enteredValue
     const nextTotal = next.adults + next.children7To12 + next.children0To6
-    const invalidRoomFamily = isRoomStay && (next.adults > 3 || next.children7To12 > 1 || next.children0To6 > 2 || next.adults + next.children7To12 > 3)
+    const invalidRoomFamily = isRoomStay && (next.adults > 3 || next.children7To12 > 1 || next.children0To6 > 2 || (next.adults >= 3 && next.children7To12 + next.children0To6 > 0))
     if (nextTotal > selectedStayCapacity || invalidRoomFamily) {
-      setGuestError(isRoomStay ? 'A room permits up to three adults, or two adults and one child aged 7–12. Up to two children aged 0–6 are complimentary and count toward capacity.' : 'This stay accommodates up to ' + selectedStayCapacity + ' overnight guests.')
+      setGuestError(isRoomStay ? 'A room permits up to three adults only. If a child is joining, please choose two adults or add another room.' : 'This stay accommodates up to ' + selectedStayCapacity + ' overnight guests.')
       return
     }
     setGuestError(null)
@@ -308,6 +312,7 @@ export function BookingApp() {
               <NumericField label="Adults" min={1} max={15 - searchChildren} value={searchAdults} onCommit={setSearchAdultsCount} help="Ages 13 and above." />
               <NumericField label="Children" min={0} max={15 - searchAdults} value={searchChildren} onCommit={(value) => { setSearchChildren(value); invalidateQuote(); setAvailability(null) }} help="Ages 0–12; you’ll confirm ages next." />
             </div>
+            {roomSearchGuidance && <p className="setup-note room-guidance">{roomSearchGuidance}</p>}
             <button className="primary" disabled={!canSearch || !isSupabaseConfigured || isSearching} onClick={searchAvailability}>{isSearching ? 'Checking availability…' : 'Check availability'}</button>
             {!isSupabaseConfigured && <p className="setup-note">Live availability will appear here once the UAT inventory connection is configured. This clean build intentionally contains no seeded stays or test calendar.</p>}
             {isSupabaseConfigured && <p className="setup-note">UAT connection is configured locally. Live availability activates after the booking schema and inventory configuration are applied.</p>}
