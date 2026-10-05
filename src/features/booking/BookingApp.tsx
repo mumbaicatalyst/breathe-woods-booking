@@ -75,6 +75,23 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
+function bookingPrefillFromUrl() {
+  const params = new URLSearchParams(window.location.search)
+  const checkIn = params.get('checkIn') ?? ''
+  const checkOut = params.get('checkOut') ?? ''
+  const guests = clamp(Number.parseInt(params.get('guests') ?? '2', 10) || 2, 1, 15)
+  const rooms = clamp(Number.parseInt(params.get('rooms') ?? '1', 10) || 1, 1, 5)
+  const validDates = /^\d{4}-\d{2}-\d{2}$/.test(checkIn) && /^\d{4}-\d{2}-\d{2}$/.test(checkOut) && checkOut > checkIn
+  const preferredStay = ['zen-villa', 'bougan-villa'].includes(params.get('stay') ?? '') ? params.get('stay')! : ''
+  return { checkIn: validDates ? checkIn : '', checkOut: validDates ? checkOut : '', guests, rooms, preferredStay, shouldSearch: validDates }
+}
+
+function publicSiteHref() {
+  return ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    ? 'http://127.0.0.1:4173/'
+    : '/'
+}
+
 /**
  * Keeps a temporary text value while someone is editing. The booking model only
  * receives a valid, clamped integer when they finish editing or use +/-.
@@ -116,11 +133,12 @@ function NumericField({ label, value, min, max, onCommit, help }: NumericFieldPr
 }
 
 export function BookingApp() {
+  const prefill = bookingPrefillFromUrl()
   const [stage, setStage] = useState<BookingStage>('search')
-  const [draft, setDraft] = useState<BookingDraft>(initialDraft)
-  const [searchAdults, setSearchAdults] = useState(2)
+  const [draft, setDraft] = useState<BookingDraft>(() => ({ ...initialDraft, checkIn: prefill.checkIn, checkOut: prefill.checkOut, party: { ...initialDraft.party, adults: prefill.guests } }))
+  const [searchAdults, setSearchAdults] = useState(prefill.guests)
   const [searchChildren, setSearchChildren] = useState(0)
-  const [requestedRooms, setRequestedRooms] = useState(1)
+  const [requestedRooms, setRequestedRooms] = useState(prefill.rooms)
   const [availability, setAvailability] = useState<AvailableProduct[] | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [isSearching, setIsSearching] = useState(false)
@@ -146,6 +164,7 @@ export function BookingApp() {
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false)
   const quoteRequestId = useRef(0)
   const wasEligibleForBonfireBenefit = useRef(false)
+  const automaticSearchPending = useRef(prefill.shouldSearch)
   const stageIndex = stages.findIndex(({ id }) => id === stage)
   const canSearch = Boolean(draft.checkIn && draft.checkOut && draft.checkOut > draft.checkIn)
   const selectedProduct = availability?.find((product) => product.productId === draft.selectedProductId)
@@ -218,7 +237,7 @@ export function BookingApp() {
     if (requestedRooms === 2) return ['zen-villa', 'bougan-two-rooms', 'bougan-villa'].includes(product.productCode)
     if (requestedRooms === 3) return product.productCode === 'bougan-villa'
     return product.productCode === 'entire-property'
-  })
+  }).sort((a, b) => Number(b.productCode === prefill.preferredStay) - Number(a.productCode === prefill.preferredStay))
 
   useEffect(() => {
     if (stage === 'personalise' && hasBonfireMealBenefit && !wasEligibleForBonfireBenefit.current && bonfireSessions === 0) {
@@ -262,6 +281,12 @@ export function BookingApp() {
       setIsSearching(false)
     }
   }
+
+  useEffect(() => {
+    if (!automaticSearchPending.current) return
+    automaticSearchPending.current = false
+    void searchAvailability()
+  }, [])
 
   useEffect(() => {
     if (stage !== 'personalise' || !draft.selectedProductId) return
@@ -327,7 +352,9 @@ export function BookingApp() {
   return (
     <main className="booking-shell">
       <header className="booking-header">
-        <a className="wordmark" href="/" aria-label="Breathe Woods booking home">Breathe Woods</a>
+        <a className="booking-wordmark" href={publicSiteHref()} aria-label="Breathe Woods home">
+          <img src="/breathe-woods-wordmark.png" alt="Breathe Woods" />
+        </a>
         <span className="header-note">Book your stay</span>
       </header>
 
@@ -367,6 +394,7 @@ export function BookingApp() {
             {displayedAvailability && (
               <section className="availability-results" aria-live="polite">
                 <h2>{displayedAvailability.length ? 'Available stays' : 'No stays available for those dates'}</h2>
+                {prefill.preferredStay && displayedAvailability.length > 0 && <p className="setup-note">Your selected villa is shown first when it is available.</p>}
                 {displayedAvailability.length === 0 ? <p>Try other dates, a smaller party, or message the host for a special request.</p> : displayedAvailability.map((product) => (
                   <article className="stay-option" key={product.productId}>
                     <div><p className="option-kind">{stayKindLabel(product.sellableKind)}</p><h3>{product.productName}</h3><p>{product.sellableKind === 'room_bundle' ? 'Up to 4 guests · 2 of 3 bedrooms; the remaining bedroom may be booked separately.' : `Up to ${product.maxOvernightGuests} overnight guests`}</p></div>
