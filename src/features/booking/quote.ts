@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase'
+import type { ExperienceSelection } from './experiences'
 
 export type QuoteItem = { label: string; quantity?: number; amount_paise: number }
 export type NightlyQuote = {
@@ -23,12 +24,12 @@ export type BookingQuote = {
 }
 
 export type QuoteInput = {
-  productId: string; checkIn: string; checkOut: string; adults: number; children7To12: number; children0To6: number; pets: number; mealPlan: 'breakfast' | 'breakfast_plus_one' | 'all_meals'; bonfireSessions: number; lakeTripGuests: number
+  productId: string; checkIn: string; checkOut: string; adults: number; children7To12: number; children0To6: number; pets: number; mealPlan: 'breakfast' | 'breakfast_plus_one' | 'all_meals'; bonfireSessions: number; lakeTripGuests: number; experienceSelections: ExperienceSelection[]
 }
 
 export async function getBookingQuote(input: QuoteInput): Promise<BookingQuote> {
   if (!supabase) throw new Error('UAT connection has not been configured.')
-  const { data, error } = await supabase.rpc('get_booking_quote_bundle_aware', {
+  const { data, error } = await supabase.rpc('get_booking_quote_with_experiences', {
     p_product_id: input.productId,
     p_check_in: input.checkIn,
     p_check_out: input.checkOut,
@@ -40,6 +41,7 @@ export async function getBookingQuote(input: QuoteInput): Promise<BookingQuote> 
     p_bonfire_sessions: input.bonfireSessions,
     p_lake_outings: 0,
     p_lake_trip_guests: input.lakeTripGuests,
+    p_experience_selections: input.experienceSelections,
   })
   if (error) throw error
   return data as BookingQuote

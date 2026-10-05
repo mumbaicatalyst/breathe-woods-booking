@@ -4,6 +4,7 @@ import { isSupabaseConfigured } from '../../lib/config'
 import { formatInrFromPaise, getAvailableProducts, type AvailableProduct } from './availability'
 import { getBookingQuote, type BookingQuote, type QuoteInput } from './quote'
 import { createReservationRequest, type ReservationRequest } from './hold'
+import { experiencePriceLabel, getGuestExperiences, type ExperienceSelection, type GuestExperience } from './experiences'
 import { RateCalendar } from './RateCalendar'
 import { PrivacyMessagingContent } from '../legal/PrivacyMessagingNotice'
 import { CancellationRefundContent } from '../legal/CancellationRefundTerms'
@@ -126,6 +127,9 @@ export function BookingApp() {
   const [mealPlan, setMealPlan] = useState<QuoteInput['mealPlan']>('breakfast')
   const [bonfireSessions, setBonfireSessions] = useState(0)
   const [lakeTripGuests, setLakeTripGuests] = useState(0)
+  const [experiences, setExperiences] = useState<GuestExperience[]>([])
+  const [experienceSelections, setExperienceSelections] = useState<Record<string, number>>({})
+  const [experienceError, setExperienceError] = useState<string | null>(null)
   const [quote, setQuote] = useState<BookingQuote | null>(null)
   const [quoteError, setQuoteError] = useState<string | null>(null)
   const [guestError, setGuestError] = useState<string | null>(null)
@@ -155,12 +159,18 @@ export function BookingApp() {
     ? 'Enter a 10-digit Indian mobile number after +91.'
     : 'Enter a valid mobile number after the country code.'
   const hasValidContactDetails = guestName.trim().length >= 2 && /\S+@\S+\.\S+/.test(guestEmail) && hasValidMobileNumber
+  const selectedExperiences: ExperienceSelection[] = Object.entries(experienceSelections)
+    .filter(([, quantity]) => quantity > 0)
+    .map(([id, quantity]) => ({ id, quantity }))
 
   const whatsappGuestSummary = [
     `${draft.party.adults} ${draft.party.adults === 1 ? 'adult' : 'adults'}`,
     draft.party.children7To12 > 0 ? `${draft.party.children7To12} child aged 7–12` : null,
     draft.party.children0To6 > 0 ? `${draft.party.children0To6} child aged 0–6` : null,
   ].filter(Boolean).join(', ')
+  const whatsappExperienceSummary = selectedExperiences.length
+    ? experiences.filter((experience) => (experienceSelections[experience.id] ?? 0) > 0).map((experience) => `${experience.name}${(experienceSelections[experience.id] ?? 0) > 1 ? ` × ${experienceSelections[experience.id]}` : ''}`).join(', ')
+    : 'None selected'
   const whatsappMessage = reservationRequest ? [
     'Hello Breathe Woods,',
     '',
@@ -173,6 +183,7 @@ export function BookingApp() {
     `Stay requested: ${selectedProduct?.productName ?? 'Breathe Woods stay'}`,
     `Guests: ${whatsappGuestSummary}`,
     `Meal plan: ${formatMealPlan(mealPlan)}`,
+    `Experiences: ${whatsappExperienceSummary}`,
     '',
     `Reference for the Breathe Woods team: ${reservationRequest.reference}`,
   ].join('\n') : ''
@@ -223,6 +234,15 @@ export function BookingApp() {
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [legalDocument])
 
+  useEffect(() => {
+    if (stage !== 'personalise') return
+    let active = true
+    void getGuestExperiences()
+      .then((catalogue) => { if (active) { setExperiences(catalogue); setExperienceError(null) } })
+      .catch(() => { if (active) setExperienceError('Experiences are temporarily unavailable. You can still request your stay.') })
+    return () => { active = false }
+  }, [stage])
+
   function invalidateQuote() {
     setQuote(null)
     setQuoteError(null)
@@ -254,7 +274,7 @@ export function BookingApp() {
         const nextQuote = await getBookingQuote({
           productId: draft.selectedProductId!, checkIn: draft.checkIn, checkOut: draft.checkOut,
           adults: draft.party.adults, children7To12: draft.party.children7To12, children0To6: draft.party.children0To6, pets: draft.party.pets,
-          mealPlan, bonfireSessions, lakeTripGuests,
+          mealPlan, bonfireSessions, lakeTripGuests, experienceSelections: selectedExperiences,
         })
         if (requestId === quoteRequestId.current) setQuote(nextQuote)
       } catch (error) {
@@ -264,7 +284,7 @@ export function BookingApp() {
       }
     }, 300)
     return () => window.clearTimeout(timer)
-  }, [stage, draft.selectedProductId, draft.checkIn, draft.checkOut, draft.party.adults, draft.party.children7To12, draft.party.children0To6, draft.party.pets, mealPlan, bonfireSessions, lakeTripGuests])
+  }, [stage, draft.selectedProductId, draft.checkIn, draft.checkOut, draft.party.adults, draft.party.children7To12, draft.party.children0To6, draft.party.pets, mealPlan, bonfireSessions, lakeTripGuests, experienceSelections])
 
   function setPartyBreakdown(category: 'adults' | 'children7To12' | 'children0To6', enteredValue: number) {
     const next = { ...draft.party }
@@ -295,7 +315,7 @@ export function BookingApp() {
       const result = await createReservationRequest({
         productId: draft.selectedProductId, checkIn: draft.checkIn, checkOut: draft.checkOut,
         adults: draft.party.adults, children7To12: draft.party.children7To12, children0To6: draft.party.children0To6, pets: draft.party.pets,
-        mealPlan, bonfireSessions, lakeTripGuests, guestName, guestEmail, guestPhone: guestPhoneE164, marketingOptIn,
+        mealPlan, bonfireSessions, lakeTripGuests, experienceSelections: selectedExperiences, guestName, guestEmail, guestPhone: guestPhoneE164, marketingOptIn,
       })
       setReservationRequest(result)
       setStage('request')
@@ -372,8 +392,23 @@ export function BookingApp() {
               <NumericField label="Bonfire + barbecue evenings" min={0} max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onCommit={(value) => { invalidateQuote(); setBonfireSessions(value) }} help={hasBonfireMealBenefit ? 'One evening has been added at no extra cost. Additional evenings are ₹500 per chargeable guest; children aged 0–6 join free.' : '₹500 per chargeable guest, per evening; children aged 0–6 join free.'} />
               <NumericField label="Guests joining the lake trip" min={0} max={activityGuestCount} value={lakeTripGuests} onCommit={(value) => { invalidateQuote(); setLakeTripGuests(value) }} help="₹500 covers up to 2 chargeable guests; ₹250 for each additional one. Children aged 0–6 join free." />
             </div>
+            {experiences.length > 0 && <section className="enhance-stay" aria-labelledby="enhance-stay-title">
+              <header><div><p className="eyebrow">Enhance your stay</p><h2 id="enhance-stay-title">Make the stay your own.</h2></div><p>Optional experiences are added to your estimate now and confirmed with the team.</p></header>
+              <div className="experience-options">{experiences.map((experience) => {
+                const quantity = experienceSelections[experience.id] ?? 0
+                const selected = quantity > 0
+                const quantityLabel = experience.pricingUnit === 'per_session' ? 'Sessions' : experience.maxQuantity > 1 ? 'Quantity' : 'Selected'
+                return <article className={selected ? 'is-selected' : ''} key={experience.id}>
+                  <div><h3>{experience.name}</h3>{experience.description && <p>{experience.description}</p>}<strong>{experiencePriceLabel(experience)}</strong>{experience.pricingUnit === 'per_guest' && <small>Children aged 0–6 join free.</small>}</div>
+                  <div className="experience-selection">
+                    {experience.maxQuantity === 1 ? <label className="check-row"><input type="checkbox" checked={selected} onChange={(event) => { invalidateQuote(); setExperienceSelections((current) => ({ ...current, [experience.id]: event.target.checked ? 1 : 0 })) }} />Add</label> : <NumericField label={quantityLabel} min={0} max={experience.maxQuantity} value={quantity} onCommit={(value) => { invalidateQuote(); setExperienceSelections((current) => ({ ...current, [experience.id]: value })) }} />}
+                  </div>
+                </article>
+              })}</div>
+            </section>}
             <p className="setup-note">{partyTotal} of up to {selectedStayCapacity} guests. Price updates automatically as you make changes.</p>
             {guestError && <p className="form-error">{guestError}</p>}
+            {experienceError && <p className="setup-note">{experienceError}</p>}
             {quoteError && <p className="form-error">{quoteError}</p>}
             {isQuoting && <p className="setup-note" aria-live="polite">Updating your price…</p>}
             {quote && <section className="quote-card" aria-live="polite">
