@@ -385,7 +385,7 @@ export function BookingApp() {
                   <strong>{formatInrFromPaise(night.total_paise)}</strong>
                 </div>)}
               </section>}
-              {quote.items.filter((item) => item.amount_paise > 0 || item.label.endsWith('(included)')).map((item) => <div className="quote-line" key={item.label}><span>{item.label}{item.quantity ? ` × ${item.quantity}` : ''}</span><strong>{item.label.endsWith('(included)') ? 'Included' : formatInrFromPaise(item.amount_paise)}</strong></div>)}
+              {quote.items.filter((item) => item.amount_paise !== 0 || item.label.endsWith('(included)')).map((item) => <div className={`quote-line${item.amount_paise < 0 ? ' quote-discount' : ''}`} key={item.label}><span>{item.label}{item.quantity ? ` × ${item.quantity}` : ''}</span><strong>{item.label.endsWith('(included)') ? 'Included' : formatInrFromPaise(item.amount_paise)}</strong></div>)}
               <div className="quote-total"><span>Total</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div>
               <p>{quote.notice}</p><button className="secondary" onClick={() => setStage('details')}>Continue</button>
             </section>}

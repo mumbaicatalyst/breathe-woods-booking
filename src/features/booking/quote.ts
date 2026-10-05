@@ -15,6 +15,8 @@ export type BookingQuote = {
   currency: 'INR'
   nights: number
   total_paise: number
+  pre_campaign_total_paise?: number
+  campaign?: { id: string; name: string; discount_paise: number } | null
   items: QuoteItem[]
   notice: string
   nightly_breakdown?: NightlyQuote[]
