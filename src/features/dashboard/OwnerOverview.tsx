@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { createOwnerInventoryBlock, getOwnerBlockTargets, getOwnerCalendar, removeOwnerInventoryBlock, type BlockTarget, type CalendarRow } from './calendar'
+import { createOwnerInventoryBlock, getOwnerBlockTargets, getOwnerCalendar, getOwnerOpenReservationRequests, removeOwnerInventoryBlock, type BlockTarget, type CalendarRow, type ReservationRequestRow } from './calendar'
 
 type DailyRate = { stay_date: string; couple_room_paise: number; tier_code: string }
 
@@ -55,6 +55,7 @@ export function OwnerOverview({ onOpenReservations }: OwnerOverviewProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [blockTargets, setBlockTargets] = useState<BlockTarget[]>([])
+  const [reservationRequests, setReservationRequests] = useState<ReservationRequestRow[]>([])
   const [blockTargetId, setBlockTargetId] = useState('')
   const [blockCheckIn, setBlockCheckIn] = useState(localIso(new Date()))
   const [blockCheckOut, setBlockCheckOut] = useState(localIso(new Date(Date.now() + 86400000)))
@@ -71,15 +72,17 @@ export function OwnerOverview({ onOpenReservations }: OwnerOverviewProps) {
     setLoading(true)
     setError(null)
     try {
-      const [calendarResult, rateResult, targetsResult] = await Promise.all([
+      const [calendarResult, rateResult, targetsResult, requestsResult] = await Promise.all([
         getOwnerCalendar(start, end),
         supabase.rpc('get_public_daily_rate_calendar', { p_start_date: start, p_end_date: localIso(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0, 12)) }),
         getOwnerBlockTargets(),
+        getOwnerOpenReservationRequests(),
       ])
       if (rateResult.error) throw new Error(rateResult.error.message)
       setRows(calendarResult)
       setRates(Object.fromEntries(((rateResult.data ?? []) as DailyRate[]).map((rate) => [rate.stay_date, rate])))
       setBlockTargets(targetsResult)
+      setReservationRequests(requestsResult.filter((request) => ['requested', 'in_conversation', 'alternative_offered'].includes(request.status)))
       setBlockTargetId((current) => current || targetsResult[0]?.target_id || '')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to load the owner overview.')
@@ -96,7 +99,7 @@ export function OwnerOverview({ onOpenReservations }: OwnerOverviewProps) {
 
   const dayBookings = useMemo(() => uniqueBookings(rows.filter((row) => Boolean(row.reservation_id) && Boolean(row.check_in) && Boolean(row.check_out) && row.check_in! <= selectedDay && row.check_out! > selectedDay)), [rows, selectedDay])
   const currentMonthBookings = useMemo(() => uniqueBookings(rows.filter((row) => Boolean(row.reservation_id))), [rows])
-  const activeHolds = currentMonthBookings.filter((row) => row.reservation_status === 'pending_payment').length
+  const activeHolds = currentMonthBookings.filter((row) => row.reservation_status === 'awaiting_manual_payment' || row.reservation_status === 'pending_payment').length
   const confirmedBookings = currentMonthBookings.filter((row) => row.reservation_status === 'confirmed').length
   const arrivalsToday = uniqueBookings(rows.filter((row) => row.check_in === today)).length
   const departuresToday = uniqueBookings(rows.filter((row) => row.check_out === today)).length
@@ -155,6 +158,7 @@ export function OwnerOverview({ onOpenReservations }: OwnerOverviewProps) {
     <section className="owner-overview-heading"><div><p className="eyebrow">Daily operations</p><h2>See the property at a glance.</h2><p>Confirmed bookings, temporary payment holds and availability update automatically every minute.</p></div><button className="secondary" onClick={() => void load()} disabled={loading}>{loading ? 'Updating…' : 'Refresh now'}</button></section>
     {error && <p className="form-error">{error}</p>}
     <section className="owner-metrics" aria-label="Booking summary"><article><span>Arrivals today</span><strong>{arrivalsToday}</strong></article><article><span>Departures today</span><strong>{departuresToday}</strong></article><article><span>Confirmed this month</span><strong>{confirmedBookings}</strong></article><article><span>Live payment holds</span><strong>{activeHolds}</strong></article></section>
+    {reservationRequests.length > 0 && <section className="owner-attention"><header><div><p className="eyebrow">Needs attention</p><h2>{reservationRequests.length} reservation {reservationRequests.length === 1 ? 'request' : 'requests'} awaiting a response</h2></div><button className="text-button" onClick={() => onOpenReservations(today, localIso(new Date(fromIso(today).getTime() + 31 * 86400000)))}>Review requests</button></header><div>{reservationRequests.slice(0, 3).map((request) => <button key={request.reservation_id} onClick={() => onOpenReservations(request.check_in, request.check_out)}><span><strong>{request.guest_name ?? 'Guest request'} · {request.product_name ?? 'Stay'}</strong><small>{request.check_in} → {request.check_out} · {request.reference}</small></span><b>{request.status.replaceAll('_', ' ')}</b></button>)}</div></section>}
     <section className="owner-overview-grid">
       <section className="owner-month-calendar">
         <header><div><p className="eyebrow">Planning calendar</p><h2>{monthLabel(visibleMonth)}</h2></div><div className="owner-month-controls"><button className="secondary" aria-label="Previous month" onClick={() => setVisibleMonth(addMonths(visibleMonth, -1))}>‹</button><button className="secondary" aria-label="Next month" onClick={() => setVisibleMonth(addMonths(visibleMonth, 1))}>›</button></div></header>

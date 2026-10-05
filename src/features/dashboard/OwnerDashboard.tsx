@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { appConfig, isSupabaseConfigured } from '../../lib/config'
 import { supabase } from '../../lib/supabase'
@@ -23,6 +23,10 @@ function formatInr(paise: number | null) {
     : new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(paise / 100)
 }
 
+function formatOwnerDate(value: string) {
+  return new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short' }).format(new Date(`${value}T12:00:00`))
+}
+
 export function OwnerDashboard() {
   const [session, setSession] = useState<Session | null>(null)
   const [email, setEmail] = useState('')
@@ -41,6 +45,7 @@ export function OwnerDashboard() {
   const [stayAlternatives, setStayAlternatives] = useState<ReservationAlternative[]>([])
   const [isLoadingAlternatives, setIsLoadingAlternatives] = useState(false)
   const [workflowMessage, setWorkflowMessage] = useState<string | null>(null)
+  const [showInventoryLedger, setShowInventoryLedger] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [start, setStart] = useState(isoDate(startOfToday()))
   const [end, setEnd] = useState(isoDate(new Date(startOfToday().getTime() + 7 * 86400000)))
@@ -196,6 +201,26 @@ export function OwnerDashboard() {
     ;(groups[row.resource_kind] ??= []).push(row)
     return groups
   }, {})
+  const bookingAgenda = useMemo(() => {
+    const groups = new Map<string, { row: CalendarRow; resources: string[] }>()
+    for (const row of calendarRows) {
+      if (!row.reservation_id || !row.check_in || !row.check_out) continue
+      const group = groups.get(row.reservation_id)
+      if (group) group.resources.push(row.resource_name)
+      else groups.set(row.reservation_id, { row, resources: [row.resource_name] })
+    }
+    return [...groups.values()].sort((left, right) => left.row.check_in!.localeCompare(right.row.check_in!))
+  }, [calendarRows])
+  const blockAgenda = useMemo(() => {
+    const groups = new Map<string, { row: CalendarRow; resources: string[] }>()
+    for (const row of calendarRows) {
+      if (row.allocation_state !== 'block' || !row.block_id || !row.check_in || !row.check_out) continue
+      const group = groups.get(row.block_id)
+      if (group) group.resources.push(row.resource_name)
+      else groups.set(row.block_id, { row, resources: [row.resource_name] })
+    }
+    return [...groups.values()].sort((left, right) => left.row.check_in!.localeCompare(right.row.check_in!))
+  }, [calendarRows])
 
   return <main className="owner-shell">
     <header className="owner-header">
@@ -221,19 +246,27 @@ export function OwnerDashboard() {
       </section>
       {calendarError && <section className="owner-callout"><h2>Dashboard access is not enabled for this account</h2><p>{calendarError}</p></section>}
       {!calendarError && <section className="dashboard-layout">
-        <section className="calendar-list">
-          {Object.entries(resourceGroups).map(([kind, rows]) => <section key={kind}>
-            <p className="eyebrow">{kind}s</p>
-            {rows.map((row) => <article className="calendar-row" key={row.resource_id + '-' + (row.allocation_id ?? 'empty')}>
-              <div><strong>{row.resource_name}</strong><span>{row.allocation_id ? row.check_in + ' → ' + row.check_out : 'Available in selected range'}</span></div>
-              {row.allocation_id && <div className={'calendar-status ' + row.allocation_state}>
-                <strong>{row.allocation_state === 'hold' ? 'Payment hold' : row.allocation_state}</strong>
-                <span>{row.reservation_reference ?? row.block_reason ?? 'Operational block'}</span>
-                {row.guest_name && <span>{row.guest_name}</span>}
-                {row.reservation_id && <button className="booking-link" onClick={() => void loadBookingDetail(row.reservation_id as string)}>View booking</button>}
-              </div>}
-            </article>)}
-          </section>)}
+        <section className="owner-reservations-main">
+          <section className="reservation-agenda">
+            <header><div><p className="eyebrow">Stay agenda</p><h2>Upcoming stays &amp; payment holds</h2><p>Each booking appears once, even when it occupies multiple rooms.</p></div><b>{bookingAgenda.length}</b></header>
+            {bookingAgenda.length === 0 ? <p className="agenda-empty">No confirmed stays or active payment holds in this date range.</p> : <div>{bookingAgenda.map(({ row, resources }) => <button key={row.reservation_id} className="agenda-row" onClick={() => void loadBookingDetail(row.reservation_id!)}><span><strong>{row.guest_name ?? row.reservation_reference ?? 'Guest stay'}</strong><small>{formatOwnerDate(row.check_in!)} → {formatOwnerDate(row.check_out!)} · {resources.length === 1 ? resources[0] : `${resources.length} rooms`}</small></span><b className={row.allocation_state === 'hold' ? 'hold' : ''}>{row.allocation_state === 'hold' ? 'Payment hold' : 'Confirmed'}</b></button>)}</div>}
+          </section>
+          {blockAgenda.length > 0 && <section className="reservation-block-summary"><header><div><p className="eyebrow">Availability blocks</p><h2>Owner and maintenance use</h2></div><b>{blockAgenda.length}</b></header><div>{blockAgenda.map(({ row, resources }) => <article key={row.block_id}><span><strong>{row.block_reason ?? 'Operational block'}</strong><small>{formatOwnerDate(row.check_in!)} → {formatOwnerDate(row.check_out!)} · {resources.length} {resources.length === 1 ? 'room' : 'rooms'}</small></span></article>)}</div></section>}
+          <section className="inventory-ledger">
+            <header><div><p className="eyebrow">Detailed inventory</p><h2>Room-by-room allocation</h2><p>Use this audit view only when you need to inspect individual rooms.</p></div><button className="secondary" onClick={() => setShowInventoryLedger((shown) => !shown)}>{showInventoryLedger ? 'Hide room detail' : 'Show room detail'}</button></header>
+            {showInventoryLedger && <div className="calendar-list">{Object.entries(resourceGroups).map(([kind, rows]) => <section key={kind}>
+              <p className="eyebrow">{kind}s</p>
+              {rows.map((row) => <article className="calendar-row" key={row.resource_id + '-' + (row.allocation_id ?? 'empty')}>
+                <div><strong>{row.resource_name}</strong><span>{row.allocation_id ? row.check_in + ' → ' + row.check_out : 'Available in selected range'}</span></div>
+                {row.allocation_id && <div className={'calendar-status ' + row.allocation_state}>
+                  <strong>{row.allocation_state === 'hold' ? 'Payment hold' : row.allocation_state}</strong>
+                  <span>{row.reservation_reference ?? row.block_reason ?? 'Operational block'}</span>
+                  {row.guest_name && <span>{row.guest_name}</span>}
+                  {row.reservation_id && <button className="booking-link" onClick={() => void loadBookingDetail(row.reservation_id as string)}>View booking</button>}
+                </div>}
+              </article>)}
+            </section>)}</div>}
+          </section>
         </section>
         <aside className="booking-detail-panel">
           {isLoadingDetail && <p>Loading booking…</p>}
