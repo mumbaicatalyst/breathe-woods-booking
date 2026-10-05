@@ -1,8 +1,9 @@
 import { supabase } from '../../lib/supabase'
 
 export type CalendarRow = {
-  resource_id: string; resource_name: string; resource_kind: string; allocation_id: string | null; reservation_id: string | null; allocation_state: 'hold' | 'confirmed' | 'block' | null; hold_expires_at: string | null; check_in: string | null; check_out: string | null; reservation_reference: string | null; reservation_status: string | null; guest_name: string | null; block_reason: string | null
+  resource_id: string; resource_name: string; resource_kind: string; allocation_id: string | null; block_id: string | null; reservation_id: string | null; allocation_state: 'hold' | 'confirmed' | 'block' | null; hold_expires_at: string | null; check_in: string | null; check_out: string | null; reservation_reference: string | null; reservation_status: string | null; guest_name: string | null; block_reason: string | null
 }
+export type BlockTarget = { target_id: string; scope: 'room' | 'villa' | 'property'; label: string }
 export type ReservationRequestRow = { reservation_id: string; reference: string; status: string; check_in: string; check_out: string; guest_name: string | null; product_name: string | null; total_paise: number | null; created_at: string }
 
 export type ReservationDetail = {
@@ -43,6 +44,26 @@ export async function getOwnerOpenReservationRequests() {
   const { data, error } = await supabase.rpc('get_owner_open_reservation_requests')
   if (error) throw new Error(error.message)
   return data as ReservationRequestRow[]
+}
+
+export async function getOwnerBlockTargets() {
+  if (!supabase) throw new Error('UAT connection has not been configured.')
+  const { data, error } = await supabase.rpc('get_owner_block_targets')
+  if (error) throw new Error(error.message)
+  return data as BlockTarget[]
+}
+
+export async function createOwnerInventoryBlock(targetId: string, scope: BlockTarget['scope'], checkIn: string, checkOut: string, reason: string) {
+  if (!supabase) throw new Error('UAT connection has not been configured.')
+  const { data, error } = await supabase.rpc('owner_create_inventory_block', { p_target_id: targetId, p_scope: scope, p_check_in: checkIn, p_check_out: checkOut, p_reason: reason })
+  if (error) throw new Error(error.message)
+  return data as { block_id: string; rooms_blocked: number }
+}
+
+export async function removeOwnerInventoryBlock(blockId: string) {
+  if (!supabase) throw new Error('UAT connection has not been configured.')
+  const { error } = await supabase.rpc('owner_remove_inventory_block', { p_block_id: blockId })
+  if (error) throw new Error(error.message)
 }
 
 export async function getOwnerReservationDetail(reservationId: string) {
