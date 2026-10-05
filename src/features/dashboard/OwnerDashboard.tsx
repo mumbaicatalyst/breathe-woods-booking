@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { appConfig, isSupabaseConfigured } from '../../lib/config'
 import { supabase } from '../../lib/supabase'
@@ -201,7 +201,7 @@ export function OwnerDashboard() {
     ;(groups[row.resource_kind] ??= []).push(row)
     return groups
   }, {})
-  const bookingAgenda = useMemo(() => {
+  const bookingAgenda = (() => {
     const groups = new Map<string, { row: CalendarRow; resources: string[] }>()
     for (const row of calendarRows) {
       if (!row.reservation_id || !row.check_in || !row.check_out) continue
@@ -210,8 +210,8 @@ export function OwnerDashboard() {
       else groups.set(row.reservation_id, { row, resources: [row.resource_name] })
     }
     return [...groups.values()].sort((left, right) => left.row.check_in!.localeCompare(right.row.check_in!))
-  }, [calendarRows])
-  const blockAgenda = useMemo(() => {
+  })()
+  const blockAgenda = (() => {
     const groups = new Map<string, { row: CalendarRow; resources: string[] }>()
     for (const row of calendarRows) {
       if (row.allocation_state !== 'block' || !row.block_id || !row.check_in || !row.check_out) continue
@@ -220,7 +220,7 @@ export function OwnerDashboard() {
       else groups.set(row.block_id, { row, resources: [row.resource_name] })
     }
     return [...groups.values()].sort((left, right) => left.row.check_in!.localeCompare(right.row.check_in!))
-  }, [calendarRows])
+  })()
 
   return <main className="owner-shell">
     <header className="owner-header">
