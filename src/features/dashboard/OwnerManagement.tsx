@@ -38,11 +38,16 @@ export function OwnerManagement() {
   const [campaignEnd, setCampaignEnd] = useState(plusDays(21))
   const [campaignDiscount, setCampaignDiscount] = useState('10')
   const [campaignProductIds, setCampaignProductIds] = useState<string[]>([])
+  const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null)
   const [editingExperienceId, setEditingExperienceId] = useState<string | null>(null)
   const [experienceName, setExperienceName] = useState('')
   const [experienceDescription, setExperienceDescription] = useState('')
   const [experiencePrice, setExperiencePrice] = useState('')
   const [experienceActive, setExperienceActive] = useState(true)
+  const [creatingExperience, setCreatingExperience] = useState(false)
+  const [experiencePricingUnit, setExperiencePricingUnit] = useState('per_stay')
+  const [experienceMaximum, setExperienceMaximum] = useState('1')
+  const [experienceDisplayOrder, setExperienceDisplayOrder] = useState('100')
 
   async function load() {
     if (!supabase) return
@@ -65,6 +70,35 @@ export function OwnerManagement() {
   function startExperienceEdit(experience: Experience) {
     setEditingExperienceId(experience.id); setExperienceName(experience.name); setExperienceDescription(experience.description ?? '')
     setExperiencePrice(fromPaise(experience.amount_paise)); setExperienceActive(experience.active); setMessage(null)
+  }
+
+  function startExperienceCreate() {
+    setCreatingExperience(true); setEditingExperienceId(null); setExperienceName(''); setExperienceDescription(''); setExperiencePrice(''); setExperienceActive(true)
+    setExperiencePricingUnit('per_stay'); setExperienceMaximum('1'); setExperienceDisplayOrder('100'); setMessage(null); setError(null)
+  }
+
+  function startCampaignEdit(campaign: Campaign) {
+    setEditingCampaignId(campaign.id); setCampaignName(campaign.name); setCampaignStart(campaign.stay_starts_on); setCampaignEnd(campaign.stay_ends_on)
+    setCampaignDiscount(String((campaign.discount_bps ?? 0) / 100)); setCampaignProductIds(campaign.product_ids ?? []); setMessage(null); setError(null)
+  }
+
+  function clearCampaignForm() {
+    setEditingCampaignId(null); setCampaignName(''); setCampaignStart(plusDays(1)); setCampaignEnd(plusDays(21)); setCampaignDiscount('10'); setCampaignProductIds([])
+  }
+
+  async function changeCampaignStatus(campaign: Campaign, status: 'active' | 'paused' | 'archived') {
+    if (!supabase) return
+    const action = status === 'archived' ? 'delete' : status === 'paused' ? 'pause' : 'resume'
+    if (!window.confirm(`Are you sure you want to ${action} “${campaign.name}”? Archived campaigns are retained only for reporting and will never be shown to guests.`)) return
+    setSaving(true); setError(null); setMessage(null)
+    try {
+      const { error: rpcError } = await supabase.rpc('owner_set_pricing_campaign_status', { p_campaign_id: campaign.id, p_status: status })
+      if (rpcError) throw new Error(rpcError.message)
+      if (editingCampaignId === campaign.id) clearCampaignForm()
+      setMessage(status === 'archived' ? 'Campaign deleted from guest use and retained only for reporting.' : `Campaign ${status === 'paused' ? 'paused' : 'resumed'} successfully.`)
+      await load()
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to change this campaign.') }
+    finally { setSaving(false) }
   }
 
   async function saveRate(event: React.FormEvent<HTMLFormElement>) {
@@ -110,14 +144,14 @@ export function OwnerManagement() {
       }
       const { error: rpcError } = await supabase.rpc('owner_upsert_pricing_campaign', {
         p_campaign: {
-          name: campaignName.trim(), status, stay_starts_on: campaignStart, stay_ends_on: campaignEnd,
+          id: editingCampaignId ?? undefined, name: campaignName.trim(), status, stay_starts_on: campaignStart, stay_ends_on: campaignEnd,
           incentive_type: 'percentage_discount', discount_bps: Math.round((Number(campaignDiscount) || 0) * 100), minimum_nights: 1, minimum_guests: 1,
         },
         p_product_ids: campaignProductIds.length ? campaignProductIds : null,
       })
       if (rpcError) throw new Error(rpcError.message)
-      setMessage(status === 'active' ? 'Campaign is live for eligible new guest quotes. Existing guest quotes, payment holds and bookings remain unchanged.' : 'Campaign draft saved. It is not visible to guests yet.')
-      setCampaignName(''); setCampaignDiscount('10'); setCampaignProductIds([]); await load()
+      setMessage(status === 'active' ? `Campaign ${editingCampaignId ? 'updated and kept live' : 'is live'} for eligible new guest quotes. Existing guest quotes, payment holds and bookings remain unchanged.` : 'Campaign draft saved. It is not visible to guests yet.')
+      clearCampaignForm(); await load()
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to save this campaign.') }
     finally { setSaving(false) }
   }
@@ -137,6 +171,25 @@ export function OwnerManagement() {
     finally { setSaving(false) }
   }
 
+  async function saveNewExperience(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!supabase) return
+    setSaving(true); setError(null); setMessage(null)
+    try {
+      const { error: rpcError } = await supabase.rpc('owner_upsert_experience_catalog_item', {
+        p_experience: {
+          name: experienceName, description: experienceDescription, amount_paise: toPaise(experiencePrice), active: experienceActive,
+          pricing_unit: experiencePricingUnit, max_quantity: Number(experienceMaximum) || 1, display_order: Number(experienceDisplayOrder) || 100,
+          configuration: { guest_visible: true, catalog_item: true },
+        },
+      })
+      if (rpcError) throw new Error(rpcError.message)
+      setMessage(`${experienceName} is saved in the experience catalogue. It is ready for guest booking-page pricing in the next experience-flow update.`)
+      setCreatingExperience(false); await load()
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to create this experience.') }
+    finally { setSaving(false) }
+  }
+
   return <section className="owner-manage">
     <header className="owner-manage-heading"><div><p className="eyebrow">Manage property</p><h2>Change what guests see—without changing past promises.</h2><p>Use the common controls first. Existing requests, payment holds and confirmed bookings always retain their quoted price.</p></div><button className="secondary" onClick={() => void load()} disabled={loading}>{loading ? 'Updating…' : 'Refresh'}</button></header>
     {error && <p className="form-error">{error}</p>}{message && <p className="manage-message">{message}</p>}
@@ -149,8 +202,9 @@ export function OwnerManagement() {
     {loading && !summary && <section className="owner-callout"><p>Loading management controls…</p></section>}
     {summary && area === 'rates' && <OwnerRateTemplate settings={summary.settings} onSaved={load} onMessage={setMessage} onError={setError} />}
     {summary && area === 'rates' && <section className="manage-workspace"><header><div><p className="eyebrow">Rates</p><h3>Choose a date, then adjust the rate guests will see.</h3></div><p>Use campaigns for temporary incentives. Change a daily rate only when you intend to change the base price.</p></header><div className="manage-rates-layout"><section className="rate-date-list">{summary.rates.length === 0 ? <p>No published daily rates were found in this range.</p> : summary.rates.slice(0, 28).map((rate) => <button key={rate.stay_date} className={selectedRateDate === rate.stay_date ? 'is-selected' : ''} onClick={() => setSelectedRateDate(rate.stay_date)}><span><strong>{dateLabel(rate.stay_date)}</strong><small>{rate.tier_code.replaceAll('_', ' ')}</small></span><b>{formatInr(rate.couple_room_paise)}</b></button>)}</section>{selectedRate && <form className="rate-editor" onSubmit={(event) => void saveRate(event)}><p className="eyebrow">Editing {dateLabel(selectedRate.stay_date)}</p><h3>{selectedRate.tier_code.replaceAll('_', ' ')}</h3><label>Rate tier<input name="tier_code" defaultValue={selectedRate.tier_code} /></label><div><label>Couple room rate<input name="couple" inputMode="decimal" defaultValue={fromPaise(selectedRate.couple_room_paise)} /></label><label>Single room rate<input name="single" inputMode="decimal" defaultValue={fromPaise(selectedRate.single_room_paise)} /></label></div><div><label>Extra adult<input name="adult" inputMode="decimal" defaultValue={fromPaise(selectedRate.extra_adult_paise)} /></label><label>Child 7–12<input name="child" inputMode="decimal" defaultValue={fromPaise(selectedRate.extra_child_7_to_12_paise)} /></label></div><label>Minimum stay nights<input name="minimum_nights" type="number" min="1" defaultValue={selectedRate.minimum_stay_nights} /></label><p className="manage-hint">All amounts are in INR. This applies only to new guest quotes from this point forward.</p><button className="primary" disabled={saving}>{saving ? 'Saving…' : 'Publish this daily rate'}</button></form>}</div></section>}
-    {summary && area === 'campaigns' && <section className="manage-workspace"><header><div><p className="eyebrow">Offers &amp; campaigns</p><h3>Use an offer to respond to a specific business need.</h3></div><p>Campaigns are measured separately from base-rate changes, so you can see what actually worked.</p></header><div className="manage-campaign-layout"><form className="campaign-form" onSubmit={(event) => { event.preventDefault(); void saveCampaign('draft') }}><h3>Create a campaign</h3><label>Internal campaign name<input value={campaignName} onChange={(event) => setCampaignName(event.target.value)} placeholder="November weekday escape" /></label><div><label>Stay from<input type="date" value={campaignStart} onChange={(event) => setCampaignStart(event.target.value)} /></label><label>Stay to<input type="date" value={campaignEnd} onChange={(event) => setCampaignEnd(event.target.value)} /></label></div><label>Percentage discount<input type="number" min="1" max="100" value={campaignDiscount} onChange={(event) => setCampaignDiscount(event.target.value)} /></label><fieldset><legend>Eligible stays</legend>{summary.products.filter((product) => product.active).map((product) => <label className="check-row" key={product.id}><input type="checkbox" checked={campaignProductIds.includes(product.id)} onChange={(event) => setCampaignProductIds((current) => event.target.checked ? [...current, product.id] : current.filter((id) => id !== product.id))} />{product.name}</label>)}</fieldset><p className="manage-hint">Published percentage offers are applied to eligible new guest quotes. Existing requests, payment holds and bookings keep their original price.</p><div className="manage-form-actions"><button className="secondary" disabled={saving}>Save draft</button><button type="button" className="primary" onClick={() => void saveCampaign('active')} disabled={saving}>Publish campaign</button></div></form><section className="campaign-list"><h3>Campaigns</h3>{summary.campaigns.length === 0 ? <p>No campaigns yet. Create one only when there is a clear reason to influence demand.</p> : summary.campaigns.map((campaign) => <article key={campaign.id}><span><strong>{campaign.name}</strong><small>{campaign.stay_starts_on} → {campaign.stay_ends_on} · {campaign.discount_bps ? `${campaign.discount_bps / 100}% off` : campaign.incentive_type.replaceAll('_', ' ')}</small></span><b className={`campaign-${campaign.status}`}>{campaign.status}</b></article>)}</section></div></section>}
+    {summary && area === 'campaigns' && <section className="manage-workspace"><header><div><p className="eyebrow">Offers &amp; campaigns</p><h3>Use an offer to respond to a specific business need.</h3></div><p>Campaigns are measured separately from base-rate changes, so you can see what actually worked.</p></header><div className="manage-campaign-layout"><form className="campaign-form" onSubmit={(event) => { event.preventDefault(); void saveCampaign('draft') }}><h3>{editingCampaignId ? 'Edit campaign' : 'Create a campaign'}</h3><label>Internal campaign name<input value={campaignName} onChange={(event) => setCampaignName(event.target.value)} placeholder="November weekday escape" /></label><div><label>Stay from<input type="date" value={campaignStart} onChange={(event) => setCampaignStart(event.target.value)} /></label><label>Stay to<input type="date" value={campaignEnd} onChange={(event) => setCampaignEnd(event.target.value)} /></label></div><label>Percentage discount<input type="number" min="1" max="100" value={campaignDiscount} onChange={(event) => setCampaignDiscount(event.target.value)} /></label><fieldset><legend>Eligible stays</legend>{summary.products.filter((product) => product.active).map((product) => <label className="check-row" key={product.id}><input type="checkbox" checked={campaignProductIds.includes(product.id)} onChange={(event) => setCampaignProductIds((current) => event.target.checked ? [...current, product.id] : current.filter((id) => id !== product.id))} />{product.name}</label>)}</fieldset><p className="manage-hint">Edit the dates to delay a campaign. Published offers apply only to new eligible quotes; existing guest prices remain protected.</p><div className="manage-form-actions"><button className="secondary" disabled={saving}>{editingCampaignId ? 'Save as draft' : 'Save draft'}</button><button type="button" className="primary" onClick={() => void saveCampaign('active')} disabled={saving}>{editingCampaignId ? 'Save changes and publish' : 'Publish campaign'}</button>{editingCampaignId && <button type="button" className="text-button" onClick={clearCampaignForm}>Cancel edit</button>}</div></form><section className="campaign-list"><h3>Campaigns</h3>{summary.campaigns.length === 0 ? <p>No campaigns yet. Create one only when there is a clear reason to influence demand.</p> : summary.campaigns.map((campaign) => <article key={campaign.id}><span><strong>{campaign.name}</strong><small>{campaign.stay_starts_on} → {campaign.stay_ends_on} · {campaign.discount_bps ? `${campaign.discount_bps / 100}% off` : campaign.incentive_type.replaceAll('_', ' ')}</small><span className="campaign-actions"><button type="button" onClick={() => startCampaignEdit(campaign)}>Edit</button>{campaign.status === 'active' ? <button type="button" onClick={() => void changeCampaignStatus(campaign, 'paused')}>Pause</button> : campaign.status === 'paused' || campaign.status === 'draft' ? <button type="button" onClick={() => void changeCampaignStatus(campaign, 'active')}>Publish</button> : null}{campaign.status !== 'archived' && <button type="button" className="danger-text" onClick={() => void changeCampaignStatus(campaign, 'archived')}>Delete</button>}</span></span><b className={`campaign-${campaign.status}`}>{campaign.status}</b></article>)}</section></div></section>}
     {summary && area === 'experiences' && <section className="manage-workspace"><header><div><p className="eyebrow">Meals &amp; experiences</p><h3>Keep guest options accurate and easy to understand.</h3></div><p>Experience prices update new quotes only. Existing guest quotes keep the price already promised.</p></header><div className="experience-grid">{summary.experiences.map((experience) => <article key={experience.id}><span className="status-chip">{experience.active ? 'Active' : 'Hidden'}</span><h3>{experience.name}</h3><p>{experience.description ?? 'No guest-facing description yet.'}</p><strong>{formatInr(experience.amount_paise)} <small>per {experience.pricing_unit.replace('_', ' ')}</small></strong><button className="secondary" onClick={() => startExperienceEdit(experience)}>Edit experience</button></article>)}</div>{editingExperience && <form className="experience-editor" onSubmit={(event) => void saveExperience(event)}><header><div><p className="eyebrow">Editing experience</p><h3>{editingExperience.name}</h3></div><button type="button" className="text-button" onClick={() => setEditingExperienceId(null)}>Close</button></header><label>Name<input value={experienceName} onChange={(event) => setExperienceName(event.target.value)} /></label><label>Description<textarea value={experienceDescription} onChange={(event) => setExperienceDescription(event.target.value)} /></label><label>Price in INR<input inputMode="decimal" value={experiencePrice} onChange={(event) => setExperiencePrice(event.target.value)} /></label><label className="check-row"><input type="checkbox" checked={experienceActive} onChange={(event) => setExperienceActive(event.target.checked)} />Show this experience to guests</label><button className="primary" disabled={saving}>{saving ? 'Saving…' : 'Save experience'}</button></form>}</section>}
+    {summary && area === 'experiences' && <section className="manage-workspace"><header><div><p className="eyebrow">Create a guest experience</p><h3>Add a future package without changing the booking rules by hand.</h3></div><button className="secondary" onClick={startExperienceCreate}>New experience</button></header>{creatingExperience && <form className="experience-editor" onSubmit={(event) => void saveNewExperience(event)}><header><div><p className="eyebrow">New experience</p><h3>Guest-facing package</h3></div><button type="button" className="text-button" onClick={() => setCreatingExperience(false)}>Close</button></header><label>Name<input value={experienceName} placeholder="Guided forest walk" onChange={(event) => setExperienceName(event.target.value)} required /></label><label>Description<textarea value={experienceDescription} placeholder="What guests receive and any useful booking note." onChange={(event) => setExperienceDescription(event.target.value)} /></label><div className="experience-builder-grid"><label>Price in INR<input inputMode="decimal" value={experiencePrice} onChange={(event) => setExperiencePrice(event.target.value)} required /></label><label>Charge method<select value={experiencePricingUnit} onChange={(event) => setExperiencePricingUnit(event.target.value)}><option value="per_stay">Fixed per stay</option><option value="per_guest">Per guest</option><option value="per_night">Per night</option><option value="per_session">Per session</option><option value="fixed_package">Fixed package</option></select></label><label>Maximum selections<input type="number" min="1" value={experienceMaximum} onChange={(event) => setExperienceMaximum(event.target.value)} /></label><label>Display order<input type="number" min="0" value={experienceDisplayOrder} onChange={(event) => setExperienceDisplayOrder(event.target.value)} /></label></div><label className="check-row"><input type="checkbox" checked={experienceActive} onChange={(event) => setExperienceActive(event.target.checked)} />Keep this package active</label><p className="manage-hint">Packages appear in a dedicated “Enhance your stay” section once their guest-selection and server-side price rule are connected. This catalogue step safely captures the information first.</p><button className="primary" disabled={saving}>{saving ? 'Saving…' : 'Save experience package'}</button></form>}</section>}
     {summary && area === 'rules' && <section className="manage-workspace rules-workspace"><header><div><p className="eyebrow">Property rules</p><h3>Review the safeguards behind every guest quote.</h3></div></header><article><h3>Guest and capacity rules</h3><p>A private room accommodates either up to three adults, or up to two adults with children. Up to two children aged 0–6 are welcome; only one child aged 7–12 is permitted in a room.</p><p className="manage-hint">These safeguards prevent a booking that the property cannot comfortably host.</p></article><article><h3>Pricing guardrails</h3><p>Daily rates and campaigns affect new guest searches only. Submitted requests, payment holds and confirmed bookings always retain the price already promised.</p><button className="secondary" onClick={() => setArea('rates')}>Review daily rates</button></article><article><h3>Payment and confirmation</h3><p>Reservation requests await an owner response. A manual-payment hold is only confirmed after the owner verifies payment, keeping availability accurate for everyone.</p><p className="manage-hint">Cancellation guidance is shown when an owner opens a reservation.</p></article></section>}
   </section>
 }
