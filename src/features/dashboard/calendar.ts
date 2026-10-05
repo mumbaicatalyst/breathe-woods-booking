@@ -5,13 +5,14 @@ export type CalendarRow = {
 }
 export type BlockTarget = { target_id: string; scope: 'room' | 'villa' | 'property'; label: string }
 export type ReservationRequestRow = { reservation_id: string; reference: string; status: string; check_in: string; check_out: string; guest_name: string | null; product_name: string | null; total_paise: number | null; created_at: string }
+export type ReservationAlternative = { product_id: string; product_code: string; product_name: string; sellable_kind: string; total_paise: number }
 
 export type ReservationDetail = {
   reservation: {
     id: string; reference: string; status: string; check_in: string; check_out: string
     adults: number; children_7_to_12: number; children_0_to_6: number; pets: number
     source: string; guest_name: string | null; guest_email: string | null; guest_phone: string | null
-    product_name: string | null; internal_note: string | null; total_paise: number | null
+    product_name: string | null; internal_note: string | null; total_paise: number | null; requested_stay_available: boolean
   }
   items: Array<{ label: string; quantity: number; amount_paise: number; item_type: string }>
   payment: { provider: string; state: string; amount_paise: number; provider_reference: string | null; expires_at: string | null } | null
@@ -28,6 +29,20 @@ export async function ownerReservationAction(reservationId: string, action: 'sta
 export async function offerAlternativeDates(reservationId: string, checkIn: string, checkOut: string, note?: string) {
   if (!supabase) throw new Error('UAT connection has not been configured.')
   const { data, error } = await supabase.rpc('owner_reprice_reservation_request', { p_reservation_id: reservationId, p_check_in: checkIn, p_check_out: checkOut, p_note: note ?? null })
+  if (error) throw new Error(error.message)
+  return data as { status: string; total_paise: number }
+}
+
+export async function getOwnerReservationAlternatives(reservationId: string) {
+  if (!supabase) throw new Error('UAT connection has not been configured.')
+  const { data, error } = await supabase.rpc('get_owner_reservation_alternatives', { p_reservation_id: reservationId })
+  if (error) throw new Error(error.message)
+  return data as ReservationAlternative[]
+}
+
+export async function offerAlternativeStay(reservationId: string, productId: string, note?: string) {
+  if (!supabase) throw new Error('UAT connection has not been configured.')
+  const { data, error } = await supabase.rpc('owner_offer_alternative_stay', { p_reservation_id: reservationId, p_product_id: productId, p_note: note ?? null })
   if (error) throw new Error(error.message)
   return data as { status: string; total_paise: number }
 }

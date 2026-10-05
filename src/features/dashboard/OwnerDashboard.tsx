@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { appConfig, isSupabaseConfigured } from '../../lib/config'
 import { supabase } from '../../lib/supabase'
 import { OwnerOverview } from './OwnerOverview'
-import { getOwnerCalendar, getOwnerOpenReservationRequests, getOwnerReservationDetail, offerAlternativeDates, ownerReservationAction, simulateUatSuccessfulPayment, type CalendarRow, type ReservationDetail, type ReservationRequestRow } from './calendar'
+import { getOwnerCalendar, getOwnerOpenReservationRequests, getOwnerReservationAlternatives, getOwnerReservationDetail, offerAlternativeDates, offerAlternativeStay, ownerReservationAction, simulateUatSuccessfulPayment, type CalendarRow, type ReservationAlternative, type ReservationDetail, type ReservationRequestRow } from './calendar'
 
 function isoDate(date: Date) {
   const year = date.getFullYear()
@@ -38,6 +38,9 @@ export function OwnerDashboard() {
   const [isUpdatingReservation, setIsUpdatingReservation] = useState(false)
   const [alternativeCheckIn, setAlternativeCheckIn] = useState('')
   const [alternativeCheckOut, setAlternativeCheckOut] = useState('')
+  const [stayAlternatives, setStayAlternatives] = useState<ReservationAlternative[]>([])
+  const [isLoadingAlternatives, setIsLoadingAlternatives] = useState(false)
+  const [workflowMessage, setWorkflowMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [start, setStart] = useState(isoDate(startOfToday()))
   const [end, setEnd] = useState(isoDate(new Date(startOfToday().getTime() + 7 * 86400000)))
@@ -89,11 +92,23 @@ export function OwnerDashboard() {
       setSelectedBooking(booking)
       setAlternativeCheckIn(booking.reservation.check_in)
       setAlternativeCheckOut(booking.reservation.check_out)
+      void loadStayAlternatives(reservationId)
     } catch (error) {
       setSelectedBooking(null)
       setDetailError(error instanceof Error ? error.message : 'Unable to load booking details.')
     } finally {
       setIsLoadingDetail(false)
+    }
+  }
+
+  async function loadStayAlternatives(reservationId: string) {
+    setIsLoadingAlternatives(true)
+    try {
+      setStayAlternatives(await getOwnerReservationAlternatives(reservationId))
+    } catch {
+      setStayAlternatives([])
+    } finally {
+      setIsLoadingAlternatives(false)
     }
   }
 
@@ -106,12 +121,36 @@ export function OwnerDashboard() {
         ? `Mark payment as received and confirm ${selectedBooking.reservation.reference}? This will block the stay inventory.`
         : undefined
     if (confirmation && !window.confirm(confirmation)) return
-    setIsUpdatingReservation(true); setDetailError(null)
+    setIsUpdatingReservation(true); setDetailError(null); setWorkflowMessage(null)
     try {
       await ownerReservationAction(selectedBooking.reservation.id, action)
       await Promise.all([loadBookingDetail(selectedBooking.reservation.id), loadCalendar()])
-    } catch (error) { setDetailError(error instanceof Error ? error.message : 'We could not update this reservation.') }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'We could not update this reservation.'
+      setDetailError(errorMessage)
+      if (/no longer available|just booked|rooms were just booked/i.test(errorMessage)) {
+        setWorkflowMessage('This requested stay is no longer available. Choose one of the available alternatives below to prepare a clear guest offer.')
+        await loadStayAlternatives(selectedBooking.reservation.id)
+      }
+    }
     finally { setIsUpdatingReservation(false) }
+  }
+
+  async function offerSelectedAlternative(alternative: ReservationAlternative) {
+    if (!selectedBooking) return
+    setIsUpdatingReservation(true); setDetailError(null); setWorkflowMessage(null)
+    try {
+      await offerAlternativeStay(selectedBooking.reservation.id, alternative.product_id)
+      await Promise.all([loadBookingDetail(selectedBooking.reservation.id), loadCalendar()])
+      setWorkflowMessage(`Alternative saved: ${alternative.product_name}. Contact the guest for approval, then create the manual-payment hold.`)
+    } catch (error) {
+      setDetailError(error instanceof Error ? error.message : 'We could not offer that alternative.')
+    } finally { setIsUpdatingReservation(false) }
+  }
+
+  function guestAlternativeMessage() {
+    if (!selectedBooking) return ''
+    return `Hello ${selectedBooking.reservation.guest_name ?? ''}, thank you for your Breathe Woods reservation request. Your original stay is no longer available, but we can offer ${selectedBooking.reservation.product_name ?? 'an alternative stay'} for ${selectedBooking.reservation.check_in} to ${selectedBooking.reservation.check_out}, estimated at ${formatInr(selectedBooking.reservation.total_paise)}. If this works for you, please reply here and we will share the payment details to confirm your booking.`
   }
 
   async function repriceAlternativeDates() {
@@ -202,6 +241,8 @@ export function OwnerDashboard() {
           {!isLoadingDetail && !detailError && !selectedBooking && <><p className="eyebrow">Booking details</p><h2>Select a booking</h2><p>Choose “View booking” beside a reservation to see its full operational summary.</p></>}
           {selectedBooking && <>
             <div className="detail-heading"><div><p className="eyebrow">{selectedBooking.reservation.status.replace('_', ' ')}</p><h2>{selectedBooking.reservation.reference}</h2></div><button className="secondary" onClick={() => setSelectedBooking(null)}>Close</button></div>
+            {workflowMessage && <p className="workflow-message">{workflowMessage}</p>}
+            {['requested', 'in_conversation', 'alternative_offered'].includes(selectedBooking.reservation.status) && !selectedBooking.reservation.requested_stay_available && <p className="workflow-message">The requested stay is no longer available for these dates. Select an available alternative below before contacting the guest.</p>}
             <div className="detail-section"><strong>{selectedBooking.reservation.product_name ?? 'Stay'}</strong><span>{selectedBooking.reservation.check_in} → {selectedBooking.reservation.check_out}</span></div>
             <div className="detail-section"><strong>{selectedBooking.reservation.guest_name ?? 'Guest details unavailable'}</strong>{selectedBooking.reservation.guest_phone && <span>{selectedBooking.reservation.guest_phone}</span>}{selectedBooking.reservation.guest_email && <span>{selectedBooking.reservation.guest_email}</span>}</div>
             <div className="detail-section"><strong>Guests</strong><span>{selectedBooking.reservation.adults} adults · {selectedBooking.reservation.children_7_to_12} children 7–12 · {selectedBooking.reservation.children_0_to_6} children 0–6 · {selectedBooking.reservation.pets} pets</span></div>
@@ -209,6 +250,8 @@ export function OwnerDashboard() {
             {['requested', 'in_conversation', 'alternative_offered'].includes(selectedBooking.reservation.status) && <div className="detail-section workflow-actions"><strong>Request actions</strong><span>Requests do not block dates until you create a manual payment hold.</span><div><button className="secondary" onClick={() => void runWorkflowAction('start_conversation')} disabled={isUpdatingReservation}>Mark in conversation</button><button className="primary" onClick={() => void runWorkflowAction('hold_for_manual_payment')} disabled={isUpdatingReservation}>{isUpdatingReservation ? 'Updating…' : 'Hold for manual payment (12h)'}</button><button className="text-button" onClick={() => void runWorkflowAction('decline')} disabled={isUpdatingReservation}>Decline request</button></div></div>}
             {selectedBooking.reservation.status === 'awaiting_manual_payment' && <div className="detail-section workflow-actions"><strong>Manual payment</strong><span>A 12-hour inventory hold is active. Confirm only after you have verified the payment manually.</span><button className="primary" onClick={() => void runWorkflowAction('confirm_manual_payment')} disabled={isUpdatingReservation}>{isUpdatingReservation ? 'Confirming…' : 'Confirm payment received'}</button></div>}
             {['requested', 'in_conversation', 'alternative_offered'].includes(selectedBooking.reservation.status) && <div className="detail-section alternative-dates"><strong>Offer alternative dates</strong><span>Uses the same stay and guest choices, then recalculates the total using the live daily rates.</span><div><label>Check-in<input type="date" value={alternativeCheckIn} onChange={(event) => setAlternativeCheckIn(event.target.value)} /></label><label>Check-out<input type="date" value={alternativeCheckOut} onChange={(event) => setAlternativeCheckOut(event.target.value)} /></label></div><button className="secondary" onClick={() => void repriceAlternativeDates()} disabled={isUpdatingReservation || !alternativeCheckIn || !alternativeCheckOut}>Offer recalculated dates</button></div>}
+            {['requested', 'in_conversation', 'alternative_offered'].includes(selectedBooking.reservation.status) && <div className="detail-section stay-alternatives"><strong>Available stays for these dates</strong><span>Use this if the requested stay is no longer available. The total below retains the guest’s party and meal choices.</span>{isLoadingAlternatives ? <span>Checking alternatives…</span> : stayAlternatives.length ? <div>{stayAlternatives.map((alternative) => <article key={alternative.product_id}><span><b>{alternative.product_name}</b><small>{alternative.sellable_kind.replace('_', ' ')} · {formatInr(alternative.total_paise)}</small></span><button className="secondary" onClick={() => void offerSelectedAlternative(alternative)} disabled={isUpdatingReservation}>Offer this stay</button></article>)}</div> : <span>No alternative stay is currently available for these exact dates.</span>}</div>}
+            {selectedBooking.reservation.status === 'alternative_offered' && (selectedBooking.reservation.guest_phone || selectedBooking.reservation.guest_email) && <div className="detail-section guest-message-actions"><strong>Send the guest the alternative</strong><span>The alternative is saved but not held. Send this message, wait for approval, then create the payment hold.</span><div>{selectedBooking.reservation.guest_phone && <a className="secondary" target="_blank" rel="noreferrer" href={`https://wa.me/${selectedBooking.reservation.guest_phone.replace(/\D/g, '')}?text=${encodeURIComponent(guestAlternativeMessage())}`}>WhatsApp guest</a>}{selectedBooking.reservation.guest_email && <a className="secondary" href={`mailto:${selectedBooking.reservation.guest_email}?subject=${encodeURIComponent('Your Breathe Woods stay alternative')}&body=${encodeURIComponent(guestAlternativeMessage())}`}>Email guest</a>}</div></div>}
             {selectedBooking.cancellation_policy && <div className="detail-section cancellation-policy"><strong>Cancellation &amp; refund guidance</strong><span>{selectedBooking.cancellation_policy.message}</span><b>Expected refund: {formatInr(selectedBooking.cancellation_policy.refund_paise)} ({selectedBooking.cancellation_policy.refund_percent}%)</b><button className="text-button" onClick={() => void runWorkflowAction('cancel')} disabled={isUpdatingReservation || selectedBooking.reservation.status === 'cancelled'}>{selectedBooking.reservation.status === 'cancelled' ? 'Cancelled' : 'Cancel reservation'}</button></div>}
             {appConfig.environment === 'uat' && selectedBooking.reservation.status === 'pending_payment' && <div className="detail-section"><strong>UAT test control</strong><span>Uses the real confirmation path without sending a payment to PhonePe.</span><button className="secondary" onClick={() => void simulatePayment()} disabled={isSimulatingPayment}>{isSimulatingPayment ? 'Confirming test payment…' : 'Simulate successful payment'}</button></div>}
             <div className="detail-section"><strong>Price summary</strong>{selectedBooking.items.map((item) => <span key={item.label + '-' + item.item_type}>{item.label} × {item.quantity} — {formatInr(item.amount_paise)}</span>)}<b>Total — {formatInr(selectedBooking.reservation.total_paise)}</b></div>
