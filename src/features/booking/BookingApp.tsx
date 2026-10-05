@@ -138,12 +138,19 @@ export function BookingApp() {
   const hasBonfireMealBenefit = partyTotal >= 7 && (mealPlan === 'all_meals' || mealPlan === 'breakfast_plus_one')
   const isRoomStay = selectedProduct?.sellableKind === 'room'
   const selectedStayCapacity = selectedProduct?.maxOvernightGuests ?? 15
-  const maxAdults = isRoomStay ? 2 : Math.max(1, selectedStayCapacity - draft.party.children7To12 - draft.party.children0To6)
-  const maxChildren7To12 = isRoomStay ? Math.min(1, Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children0To6)) : Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children0To6)
+  // A room includes a couple; one additional chargeable guest can be either
+  // a third adult or one child aged 7–12. Younger children use capacity but
+  // are complimentary.
+  const maxAdults = isRoomStay
+    ? Math.min(3, Math.max(1, selectedStayCapacity - draft.party.children7To12 - draft.party.children0To6), 3 - draft.party.children7To12)
+    : Math.max(1, selectedStayCapacity - draft.party.children7To12 - draft.party.children0To6)
+  const maxChildren7To12 = isRoomStay
+    ? Math.min(1, Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children0To6), Math.max(0, 3 - draft.party.adults))
+    : Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children0To6)
   const maxChildren0To6 = isRoomStay ? Math.min(2, Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children7To12)) : Math.max(0, selectedStayCapacity - draft.party.adults - draft.party.children7To12)
   const displayedAvailability = availability?.filter((product) => {
     if (requestedRooms === 1) {
-      const canUseOneFamilyRoom = searchAdults <= 2 && searchChildren <= 2 && requestedGuestCount <= 4
+      const canUseOneFamilyRoom = searchAdults <= 3 && searchChildren <= 2 && requestedGuestCount <= 4
       return canUseOneFamilyRoom
         ? product.sellableKind === 'room' || product.sellableKind === 'villa'
         : ['zen-villa', 'bougan-two-rooms', 'bougan-villa'].includes(product.productCode)
@@ -207,9 +214,9 @@ export function BookingApp() {
     const next = { ...draft.party }
     next[category] = enteredValue
     const nextTotal = next.adults + next.children7To12 + next.children0To6
-    const invalidRoomFamily = isRoomStay && (next.adults > 2 || next.children7To12 > 1 || next.children0To6 > 2 || next.children7To12 + next.children0To6 > 2)
+    const invalidRoomFamily = isRoomStay && (next.adults > 3 || next.children7To12 > 1 || next.children0To6 > 2 || next.adults + next.children7To12 > 3)
     if (nextTotal > selectedStayCapacity || invalidRoomFamily) {
-      setGuestError(isRoomStay ? 'A room accommodates up to two adults and two children, with at most one child aged 7–12.' : 'This stay accommodates up to ' + selectedStayCapacity + ' overnight guests.')
+      setGuestError(isRoomStay ? 'A room permits up to three adults, or two adults and one child aged 7–12. Up to two children aged 0–6 are complimentary and count toward capacity.' : 'This stay accommodates up to ' + selectedStayCapacity + ' overnight guests.')
       return
     }
     setGuestError(null)
