@@ -41,6 +41,12 @@ function formatStayDate(value: string) {
   return new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${value}T12:00:00`))
 }
 
+function formatMealPlan(value: QuoteInput['mealPlan']) {
+  if (value === 'all_meals') return 'All meals'
+  if (value === 'breakfast_plus_one') return 'Breakfast + 1 meal'
+  return 'Breakfast only'
+}
+
 type NumericFieldProps = {
   label: string
   value: number
@@ -149,6 +155,25 @@ export function BookingApp() {
     ? 'Enter a 10-digit Indian mobile number after +91.'
     : 'Enter a valid mobile number after the country code.'
   const hasValidContactDetails = guestName.trim().length >= 2 && /\S+@\S+\.\S+/.test(guestEmail) && hasValidMobileNumber
+
+  const whatsappGuestSummary = [
+    `${draft.party.adults} ${draft.party.adults === 1 ? 'adult' : 'adults'}`,
+    draft.party.children7To12 > 0 ? `${draft.party.children7To12} child aged 7–12` : null,
+    draft.party.children0To6 > 0 ? `${draft.party.children0To6} child aged 0–6` : null,
+  ].filter(Boolean).join(', ')
+  const whatsappMessage = reservationRequest ? [
+    'Hello Breathe Woods,',
+    '',
+    'I’ve sent a reservation request and would like to confirm availability and the payment next steps.',
+    '',
+    `Guest: ${guestName.trim()}`,
+    `Dates: ${formatStayDate(draft.checkIn)} – ${formatStayDate(draft.checkOut)}`,
+    `Stay requested: ${selectedProduct?.productName ?? 'Breathe Woods stay'}`,
+    `Guests: ${whatsappGuestSummary}`,
+    `Meal plan: ${formatMealPlan(mealPlan)}`,
+    '',
+    `Reference for the Breathe Woods team: ${reservationRequest.reference}`,
+  ].join('\n') : ''
 
   const requestedGuestCount = searchAdults + searchChildren
   const partyTotal = draft.party.adults + draft.party.children7To12 + draft.party.children0To6
@@ -371,7 +396,7 @@ export function BookingApp() {
         {stage === 'request' && reservationRequest && <section className="empty-state">
           <p className="eyebrow">Request received</p><h1>Thank you — we’ll be in touch shortly.</h1><p>Your reservation request has been sent to Breathe Woods. We’ll confirm the final availability and share payment details before your stay is confirmed.</p>
           <section className="quote-card"><div className="quote-total"><span>Estimated total</span><strong>{formatInrFromPaise(reservationRequest.total_paise)}</strong></div><p>Your Breathe Woods request reference is <strong>{reservationRequest.reference}</strong>.</p></section>
-          <a className="whatsapp-button" target="_blank" rel="noreferrer" href={`https://wa.me/919967786444?text=${encodeURIComponent(`Hello Breathe Woods, I have sent reservation request ${reservationRequest.reference}.`)}`}>
+          <a className="whatsapp-button" target="_blank" rel="noreferrer" href={`https://wa.me/919967786444?text=${encodeURIComponent(whatsappMessage)}`}>
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 11.5a8 8 0 0 1-11.76 7.05L4 20l1.45-4.04A8 8 0 1 1 20 11.5Z" /><path d="M9.2 8.2c.25-.55.5-.55.72-.55h.36c.13 0 .3.05.38.28l.73 1.72c.08.2.04.4-.08.56l-.45.58c.38.75 1 1.37 1.75 1.75l.58-.45c.16-.12.36-.16.56-.08l1.72.73c.23.08.28.25.28.38v.36c0 .22 0 .47-.55.72-.36.16-.88.25-1.47.04-1.06-.37-2.25-1.18-3.25-2.18-1-1-1.8-2.19-2.18-3.25-.21-.59-.12-1.11.04-1.47Z" /></svg>
             <span>Message us on WhatsApp</span>
           </a>
