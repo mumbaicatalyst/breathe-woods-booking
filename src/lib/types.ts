@@ -1,4 +1,4 @@
-export type BookingStage = 'search' | 'personalise' | 'details' | 'payment'
+export type BookingStage = 'search' | 'personalise' | 'details' | 'request'
 
 export type Party = {
   adults: number

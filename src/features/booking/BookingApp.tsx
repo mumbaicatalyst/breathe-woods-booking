@@ -3,7 +3,7 @@ import type { BookingDraft, BookingStage } from '../../lib/types'
 import { isSupabaseConfigured } from '../../lib/config'
 import { formatInrFromPaise, getAvailableProducts, type AvailableProduct } from './availability'
 import { getBookingQuote, type BookingQuote, type QuoteInput } from './quote'
-import { createBookingHold, getBookingHoldStatus, type BookingHold, type BookingHoldStatus } from './hold'
+import { createReservationRequest, type ReservationRequest } from './hold'
 import { RateCalendar } from './RateCalendar'
 
 const initialDraft: BookingDraft = {
@@ -16,7 +16,7 @@ const stages: { id: BookingStage; label: string }[] = [
   { id: 'search', label: 'Find a stay' },
   { id: 'personalise', label: 'Choose your stay' },
   { id: 'details', label: 'Your details' },
-  { id: 'payment', label: 'Payment' },
+  { id: 'request', label: 'Request sent' },
 ]
 
 const countryCodes = [
@@ -37,12 +37,6 @@ function stayKindLabel(kind: string) {
 
 function formatStayDate(value: string) {
   return new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${value}T12:00:00`))
-}
-
-function formatRemainingTime(totalSeconds: number) {
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
 type NumericFieldProps = {
@@ -120,11 +114,9 @@ export function BookingApp() {
   const [countryCode, setCountryCode] = useState('+91')
   const [customCountryCode, setCustomCountryCode] = useState('')
   const [marketingOptIn, setMarketingOptIn] = useState(false)
-  const [hold, setHold] = useState<BookingHold | null>(null)
-  const [holdSecondsRemaining, setHoldSecondsRemaining] = useState(0)
-  const [holdStatus, setHoldStatus] = useState<BookingHoldStatus | null>(null)
-  const [holdError, setHoldError] = useState<string | null>(null)
-  const [isCreatingHold, setIsCreatingHold] = useState(false)
+  const [reservationRequest, setReservationRequest] = useState<ReservationRequest | null>(null)
+  const [requestError, setRequestError] = useState<string | null>(null)
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false)
   const quoteRequestId = useRef(0)
   const wasEligibleForBonfireBenefit = useRef(false)
   const stageIndex = stages.findIndex(({ id }) => id === stage)
@@ -211,35 +203,6 @@ export function BookingApp() {
     return () => window.clearTimeout(timer)
   }, [stage, draft.selectedProductId, draft.checkIn, draft.checkOut, draft.party.adults, draft.party.children7To12, draft.party.children0To6, draft.party.pets, mealPlan, bonfireSessions, lakeTripGuests])
 
-  useEffect(() => {
-    if (stage !== 'payment' || !hold) return
-    let cancelled = false
-    const updateCountdown = () => {
-      const seconds = Math.max(0, Math.ceil((new Date(hold.expires_at).getTime() - Date.now()) / 1000))
-      if (!cancelled) setHoldSecondsRemaining(seconds)
-    }
-    updateCountdown()
-    const timer = window.setInterval(updateCountdown, 1000)
-    return () => { cancelled = true; window.clearInterval(timer) }
-  }, [stage, hold])
-
-  useEffect(() => {
-    if (stage !== 'payment' || !hold) return
-    let cancelled = false
-    const refreshStatus = async () => {
-      try {
-        const nextStatus = await getBookingHoldStatus(hold)
-        if (!cancelled) setHoldStatus(nextStatus)
-      } catch {
-        // Status polling is a convenience after a payment redirect. The expiry
-        // timer remains accurate even if a transient network request fails.
-      }
-    }
-    void refreshStatus()
-    const timer = window.setInterval(() => void refreshStatus(), 5000)
-    return () => { cancelled = true; window.clearInterval(timer) }
-  }, [stage, hold])
-
   function setPartyBreakdown(category: 'adults' | 'children7To12' | 'children0To6', enteredValue: number) {
     const next = { ...draft.party }
     next[category] = enteredValue
@@ -261,22 +224,21 @@ export function BookingApp() {
     setAvailability(null)
   }
 
-  async function createHold() {
+  async function submitReservationRequest() {
     if (!draft.selectedProductId) return
-    setIsCreatingHold(true)
-    setHoldError(null)
+    setIsSubmittingRequest(true)
+    setRequestError(null)
     try {
-      const result = await createBookingHold({
+      const result = await createReservationRequest({
         productId: draft.selectedProductId, checkIn: draft.checkIn, checkOut: draft.checkOut,
         adults: draft.party.adults, children7To12: draft.party.children7To12, children0To6: draft.party.children0To6, pets: draft.party.pets,
         mealPlan, bonfireSessions, lakeTripGuests, guestName, guestEmail, guestPhone: guestPhoneE164, marketingOptIn,
       })
-      setHold(result)
-      setHoldStatus({ reservation_status: 'pending_payment', payment_state: 'created', expires_at: result.expires_at, total_paise: result.total_paise, reference: result.reference })
-      setStage('payment')
+      setReservationRequest(result)
+      setStage('request')
     } catch (error) {
-      setHoldError(error instanceof Error ? error.message : 'We could not hold this stay. Please try again.')
-    } finally { setIsCreatingHold(false) }
+      setRequestError(error instanceof Error ? error.message : 'We could not send your request. Please try again.')
+    } finally { setIsSubmittingRequest(false) }
   }
 
   return (
@@ -367,18 +329,12 @@ export function BookingApp() {
           </section>
         )}
         {stage === 'details' && quote && (
-          <section><p className="eyebrow">One last step</p><h1>Your details</h1><p className="intro">We’ll hold this stay for 10 minutes while payment is arranged. It is not confirmed until payment succeeds.</p><div className="form-grid"><label>Full name<input autoComplete="name" value={guestName} onChange={(event) => setGuestName(event.target.value)} /></label><label>Email<input type="email" autoComplete="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} /></label><label className="phone-field">Mobile / WhatsApp number<span className="phone-input"><select aria-label="Country calling code" value={countryCode} onChange={(event) => setCountryCode(event.target.value)}>{countryCodes.map((country) => <option value={country.value} key={country.value}>{country.label} ({country.value})</option>)}<option value="other">Other</option></select>{countryCode === 'other' && <input className="custom-country-code" type="tel" inputMode="tel" aria-label="Country calling code" placeholder="+ code" value={customCountryCode} onChange={(event) => setCustomCountryCode(event.target.value)} />}<input type="tel" inputMode="tel" autoComplete="tel-national" placeholder={countryCode === '+91' ? '10-digit mobile number' : 'Mobile number'} value={guestPhone} onChange={(event) => setGuestPhone(event.target.value)} /></span><small>{countryCode === '+91' ? 'Enter your 10-digit mobile number; +91 is added automatically.' : 'We’ll use this number for stay updates.'}</small></label></div><label className="marketing-consent"><input type="checkbox" checked={marketingOptIn} onChange={(event) => setMarketingOptIn(event.target.checked)} /><span>Yes, I’d like occasional Breathe Woods offers and updates by email and WhatsApp.<small>Optional. Booking and stay updates are sent separately. You can opt out at any time.</small></span></label><p className="policy-link">See our <a href="/privacy-and-messaging">Privacy &amp; Messaging Notice</a>.</p><section className="quote-card"><div className="quote-total"><span>Amount to pay</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>By continuing, you acknowledge that this UAT booking is held temporarily and will require payment confirmation.</p></section><button className="primary" onClick={createHold} disabled={isCreatingHold || !hasValidContactDetails}>{isCreatingHold ? 'Holding your stay…' : 'Continue to payment'}</button>{!hasValidContactDetails && <p className="setup-note">{phoneValidationMessage}</p>}{holdError && <p className="form-error">{holdError}</p>}<button className="text-button" onClick={() => setStage('personalise')}>Back to price</button></section>
+          <section><p className="eyebrow">One last step</p><h1>Your details</h1><p className="intro">Send your reservation request and Breathe Woods will personally confirm availability and share payment details. A request is not a confirmed reservation.</p><div className="form-grid"><label>Full name<input autoComplete="name" value={guestName} onChange={(event) => setGuestName(event.target.value)} /></label><label>Email<input type="email" autoComplete="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} /></label><label className="phone-field">Mobile / WhatsApp number<span className="phone-input"><select aria-label="Country calling code" value={countryCode} onChange={(event) => setCountryCode(event.target.value)}>{countryCodes.map((country) => <option value={country.value} key={country.value}>{country.label} ({country.value})</option>)}<option value="other">Other</option></select>{countryCode === 'other' && <input className="custom-country-code" type="tel" inputMode="tel" aria-label="Country calling code" placeholder="+ code" value={customCountryCode} onChange={(event) => setCustomCountryCode(event.target.value)} />}<input type="tel" inputMode="tel" autoComplete="tel-national" placeholder={countryCode === '+91' ? '10-digit mobile number' : 'Mobile number'} value={guestPhone} onChange={(event) => setGuestPhone(event.target.value)} /></span><small>{countryCode === '+91' ? 'Enter your 10-digit mobile number; +91 is added automatically.' : 'We’ll use this number for stay updates.'}</small></label></div><label className="marketing-consent"><input type="checkbox" checked={marketingOptIn} onChange={(event) => setMarketingOptIn(event.target.checked)} /><span>Yes, I’d like occasional Breathe Woods offers and updates by email and WhatsApp.<small>Optional. Booking and stay updates are sent separately. You can opt out at any time.</small></span></label><p className="policy-link">See our <a href="/privacy-and-messaging">Privacy &amp; Messaging Notice</a> and <a href="/cancellation-and-refunds">Cancellation &amp; Refund Terms</a>.</p><section className="quote-card"><div className="quote-total"><span>Estimated total</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>By sending this request, you acknowledge the cancellation and refund terms. Availability and payment are confirmed directly by Breathe Woods.</p></section><button className="primary" onClick={submitReservationRequest} disabled={isSubmittingRequest || !hasValidContactDetails}>{isSubmittingRequest ? 'Sending request…' : 'Send reservation request'}</button>{!hasValidContactDetails && <p className="setup-note">{phoneValidationMessage}</p>}{requestError && <p className="form-error">{requestError}</p>}<button className="text-button" onClick={() => setStage('personalise')}>Back to price</button></section>
         )}
-        {stage === 'payment' && hold && <section className="empty-state">
-          {holdStatus?.reservation_status === 'confirmed' ? <>
-            <p className="eyebrow">Booking confirmed</p><h1>You’re all set.</h1><p>Your payment has been verified and your stay is confirmed. Your Breathe Woods reference is <strong>{hold.reference}</strong>.</p>
-          </> : holdSecondsRemaining <= 0 || holdStatus?.payment_state === 'expired' ? <>
-            <p className="eyebrow">Payment window ended</p><h1>Your stay is available again.</h1><p>No payment was confirmed in time, so the temporary hold has ended. Please search again to create a fresh booking.</p><button className="primary" onClick={() => { setHold(null); setHoldStatus(null); setStage('search') }}>Search again</button>
-          </> : <>
-            <p className="eyebrow">Stay held temporarily</p><h1>Secure payment is next.</h1><p>We’ve reserved this stay while you complete payment. Your hold ends in <strong>{formatRemainingTime(holdSecondsRemaining)}</strong>.</p>
-            <section className="quote-card"><div className="quote-total"><span>Amount due</span><strong>{formatInrFromPaise(hold.total_paise)}</strong></div><p>PhonePe checkout will open here once its UAT credentials are connected. Payment confirmation happens automatically; you will not need to submit a second form.</p></section>
-            <p className="setup-note">UAT reference: <strong>{hold.reference}</strong></p>
-          </>}
+        {stage === 'request' && reservationRequest && <section className="empty-state">
+          <p className="eyebrow">Request received</p><h1>Thank you — we’ll be in touch shortly.</h1><p>Your reservation request has been sent to Breathe Woods. We’ll confirm the final availability and share payment details before your stay is confirmed.</p>
+          <section className="quote-card"><div className="quote-total"><span>Estimated total</span><strong>{formatInrFromPaise(reservationRequest.total_paise)}</strong></div><p>Your Breathe Woods request reference is <strong>{reservationRequest.reference}</strong>.</p></section>
+          <a className="secondary" href={`https://wa.me/919967786444?text=${encodeURIComponent(`Hello Breathe Woods, I have sent reservation request ${reservationRequest.reference}.`)}`}>Message Breathe Woods on WhatsApp</a>
         </section>}
       </section>
 
