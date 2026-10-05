@@ -5,6 +5,8 @@ import { formatInrFromPaise, getAvailableProducts, type AvailableProduct } from 
 import { getBookingQuote, type BookingQuote, type QuoteInput } from './quote'
 import { createReservationRequest, type ReservationRequest } from './hold'
 import { RateCalendar } from './RateCalendar'
+import { PrivacyMessagingContent } from '../legal/PrivacyMessagingNotice'
+import { CancellationRefundContent } from '../legal/CancellationRefundTerms'
 
 const initialDraft: BookingDraft = {
   checkIn: '',
@@ -46,6 +48,20 @@ type NumericFieldProps = {
   max: number
   onCommit: (value: number) => void
   help?: string
+}
+
+type LegalDocument = 'privacy' | 'cancellation'
+
+function LegalOverlay({ document, onClose }: { document: LegalDocument; onClose: () => void }) {
+  const title = document === 'privacy' ? 'Privacy & messaging notice' : 'Cancellation & refund terms'
+  return <div className="legal-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="legal-overlay-card" role="dialog" aria-modal="true" aria-label={title}>
+      <header><span className="eyebrow">Breathe Woods</span><button className="secondary legal-overlay-close" type="button" autoFocus onClick={onClose}>Close</button></header>
+      <div className="legal-overlay-content">
+        {document === 'privacy' ? <PrivacyMessagingContent /> : <CancellationRefundContent />}
+      </div>
+    </section>
+  </div>
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -116,6 +132,7 @@ export function BookingApp() {
   const [marketingOptIn, setMarketingOptIn] = useState(false)
   const [reservationRequest, setReservationRequest] = useState<ReservationRequest | null>(null)
   const [requestError, setRequestError] = useState<string | null>(null)
+  const [legalDocument, setLegalDocument] = useState<LegalDocument | null>(null)
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false)
   const quoteRequestId = useRef(0)
   const wasEligibleForBonfireBenefit = useRef(false)
@@ -135,7 +152,8 @@ export function BookingApp() {
 
   const requestedGuestCount = searchAdults + searchChildren
   const partyTotal = draft.party.adults + draft.party.children7To12 + draft.party.children0To6
-  const hasBonfireMealBenefit = partyTotal >= 7 && (mealPlan === 'all_meals' || mealPlan === 'breakfast_plus_one')
+  const activityGuestCount = draft.party.adults + draft.party.children7To12
+  const hasBonfireMealBenefit = activityGuestCount >= 7 && (mealPlan === 'all_meals' || mealPlan === 'breakfast_plus_one')
   const isRoomStay = selectedProduct?.sellableKind === 'room'
   const selectedStayCapacity = selectedProduct?.maxOvernightGuests ?? 15
   // A room includes a couple; one additional chargeable guest can be either
@@ -166,6 +184,13 @@ export function BookingApp() {
     }
     wasEligibleForBonfireBenefit.current = stage === 'personalise' && hasBonfireMealBenefit
   }, [stage, hasBonfireMealBenefit, bonfireSessions])
+
+  useEffect(() => {
+    if (!legalDocument) return
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setLegalDocument(null) }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [legalDocument])
 
   function invalidateQuote() {
     setQuote(null)
@@ -312,8 +337,8 @@ export function BookingApp() {
               <NumericField label="Children (0–6)" min={0} max={maxChildren0To6} value={draft.party.children0To6} onCommit={(value) => setPartyBreakdown('children0To6', value)} help="Complimentary, but included in capacity." />
               <NumericField label="Pets" min={0} max={3} value={draft.party.pets} onCommit={(value) => { invalidateQuote(); setDraft({ ...draft, party: { ...draft.party, pets: value } }) }} />
               <label className="meal-plan-field">Meal plan<select value={mealPlan} onChange={(event) => { invalidateQuote(); setMealPlan(event.target.value as QuoteInput['mealPlan']) }} disabled={selectedProduct.sellableKind === 'entire_property'}>{selectedProduct.sellableKind !== 'entire_property' && <><option value="breakfast">Breakfast only</option><option value="breakfast_plus_one">Breakfast + 1 meal</option></>}<option value="all_meals">All meals</option></select></label>
-              <NumericField label="Bonfire + barbecue evenings" min={0} max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onCommit={(value) => { invalidateQuote(); setBonfireSessions(value) }} help={hasBonfireMealBenefit ? 'One evening has been added at no extra cost. Additional evenings are ₹500 per guest.' : '₹500 per guest, per evening.'} />
-              <NumericField label="Guests joining the lake trip" min={0} max={requestedGuestCount} value={lakeTripGuests} onCommit={(value) => { invalidateQuote(); setLakeTripGuests(value) }} help="₹500 covers up to 2 guests; ₹250 for each additional guest." />
+              <NumericField label="Bonfire + barbecue evenings" min={0} max={Math.max(0, (new Date(draft.checkOut).getTime() - new Date(draft.checkIn).getTime()) / 86400000)} value={bonfireSessions} onCommit={(value) => { invalidateQuote(); setBonfireSessions(value) }} help={hasBonfireMealBenefit ? 'One evening has been added at no extra cost. Additional evenings are ₹500 per chargeable guest; children aged 0–6 join free.' : '₹500 per chargeable guest, per evening; children aged 0–6 join free.'} />
+              <NumericField label="Guests joining the lake trip" min={0} max={activityGuestCount} value={lakeTripGuests} onCommit={(value) => { invalidateQuote(); setLakeTripGuests(value) }} help="₹500 covers up to 2 chargeable guests; ₹250 for each additional one. Children aged 0–6 join free." />
             </div>
             <p className="setup-note">{partyTotal} of up to {selectedStayCapacity} guests. Price updates automatically as you make changes.</p>
             {guestError && <p className="form-error">{guestError}</p>}
@@ -336,7 +361,7 @@ export function BookingApp() {
           </section>
         )}
         {stage === 'details' && quote && (
-          <section><p className="eyebrow">One last step</p><h1>Your details</h1><p className="intro">Send your reservation request and Breathe Woods will personally confirm availability and share payment details. A request is not a confirmed reservation.</p><div className="form-grid"><label>Full name<input autoComplete="name" value={guestName} onChange={(event) => setGuestName(event.target.value)} /></label><label>Email<input type="email" autoComplete="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} /></label><label className="phone-field">Mobile / WhatsApp number<span className="phone-input"><select aria-label="Country calling code" value={countryCode} onChange={(event) => setCountryCode(event.target.value)}>{countryCodes.map((country) => <option value={country.value} key={country.value}>{country.label} ({country.value})</option>)}<option value="other">Other</option></select>{countryCode === 'other' && <input className="custom-country-code" type="tel" inputMode="tel" aria-label="Country calling code" placeholder="+ code" value={customCountryCode} onChange={(event) => setCustomCountryCode(event.target.value)} />}<input type="tel" inputMode="tel" autoComplete="tel-national" placeholder={countryCode === '+91' ? '10-digit mobile number' : 'Mobile number'} value={guestPhone} onChange={(event) => setGuestPhone(event.target.value)} /></span><small>{countryCode === '+91' ? 'Enter your 10-digit mobile number; +91 is added automatically.' : 'We’ll use this number for stay updates.'}</small></label></div><label className="marketing-consent"><input type="checkbox" checked={marketingOptIn} onChange={(event) => setMarketingOptIn(event.target.checked)} /><span>Yes, I’d like occasional Breathe Woods offers and updates by email and WhatsApp.<small>Optional. Booking and stay updates are sent separately. You can opt out at any time.</small></span></label><p className="policy-link">See our <a href="/privacy-and-messaging">Privacy &amp; Messaging Notice</a> and <a href="/cancellation-and-refunds">Cancellation &amp; Refund Terms</a>.</p><section className="quote-card"><div className="quote-total"><span>Estimated total</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>By sending this request, you acknowledge the cancellation and refund terms. Availability and payment are confirmed directly by Breathe Woods.</p></section><button className="primary" onClick={submitReservationRequest} disabled={isSubmittingRequest || !hasValidContactDetails}>{isSubmittingRequest ? 'Sending request…' : 'Send reservation request'}</button>{!hasValidContactDetails && <p className="setup-note">{phoneValidationMessage}</p>}{requestError && <p className="form-error">{requestError}</p>}<button className="text-button" onClick={() => setStage('personalise')}>Back to price</button></section>
+          <section><p className="eyebrow">One last step</p><h1>Your details</h1><p className="intro">Send your reservation request and Breathe Woods will personally confirm availability and share payment details. A request is not a confirmed reservation.</p><div className="form-grid"><label>Full name<input autoComplete="name" value={guestName} onChange={(event) => setGuestName(event.target.value)} /></label><label>Email<input type="email" autoComplete="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} /></label><label className="phone-field">Mobile / WhatsApp number<span className="phone-input"><select aria-label="Country calling code" value={countryCode} onChange={(event) => setCountryCode(event.target.value)}>{countryCodes.map((country) => <option value={country.value} key={country.value}>{country.label} ({country.value})</option>)}<option value="other">Other</option></select>{countryCode === 'other' && <input className="custom-country-code" type="tel" inputMode="tel" aria-label="Country calling code" placeholder="+ code" value={customCountryCode} onChange={(event) => setCustomCountryCode(event.target.value)} />}<input type="tel" inputMode="tel" autoComplete="tel-national" placeholder={countryCode === '+91' ? '10-digit mobile number' : 'Mobile number'} value={guestPhone} onChange={(event) => setGuestPhone(event.target.value)} /></span><small>{countryCode === '+91' ? 'Enter your 10-digit mobile number; +91 is added automatically.' : 'We’ll use this number for stay updates.'}</small></label></div><label className="marketing-consent"><input type="checkbox" checked={marketingOptIn} onChange={(event) => setMarketingOptIn(event.target.checked)} /><span>Yes, I’d like occasional Breathe Woods offers and updates by email and WhatsApp.<small>Optional. Booking and stay updates are sent separately. You can opt out at any time.</small></span></label><p className="policy-link">See our <button type="button" className="inline-link" onClick={() => setLegalDocument('privacy')}>Privacy &amp; Messaging Notice</button> and <button type="button" className="inline-link" onClick={() => setLegalDocument('cancellation')}>Cancellation &amp; Refund Terms</button>.</p><section className="quote-card"><div className="quote-total"><span>Estimated total</span><strong>{formatInrFromPaise(quote.total_paise)}</strong></div><p>By sending this request, you acknowledge the cancellation and refund terms. Availability and payment are confirmed directly by Breathe Woods.</p></section><button className="primary" onClick={submitReservationRequest} disabled={isSubmittingRequest || !hasValidContactDetails}>{isSubmittingRequest ? 'Sending request…' : 'Send reservation request'}</button>{!hasValidContactDetails && <p className="setup-note">{phoneValidationMessage}</p>}{requestError && <p className="form-error">{requestError}</p>}<button className="text-button" onClick={() => setStage('personalise')}>Back to price</button></section>
         )}
         {stage === 'request' && reservationRequest && <section className="empty-state">
           <p className="eyebrow">Request received</p><h1>Thank you — we’ll be in touch shortly.</h1><p>Your reservation request has been sent to Breathe Woods. We’ll confirm the final availability and share payment details before your stay is confirmed.</p>
@@ -346,6 +371,7 @@ export function BookingApp() {
       </section>
 
       <footer className="booking-footer">Need something specific? <a href="mailto:sanil.prashant@gmail.com">Message the host</a></footer>
+      {legalDocument && <LegalOverlay document={legalDocument} onClose={() => setLegalDocument(null)} />}
     </main>
   )
 }
