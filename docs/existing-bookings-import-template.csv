@@ -1,0 +1,2 @@
+source_reference,source_system,record_type,check_in,check_out,stay_scope,villa,room_count,room_notes,guest_name,guest_phone,guest_email,payment_status,estimated_total_inr,notes,review_status
+CAL-001,Google Calendar,confirmed_guest,YYYY-MM-DD,YYYY-MM-DD,villa,zen,2,,Guest name,+91XXXXXXXXXX,guest@example.com,paid,,,needs_review
