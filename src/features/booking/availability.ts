@@ -8,6 +8,9 @@ export type AvailableProduct = {
   maxOvernightGuests: number
   includedChargeableGuests: number
   fromAmountPaise: number | null
+  standardFromAmountPaise: number | null
+  offerName: string | null
+  offerDiscountBps: number | null
 }
 
 type AvailabilityRow = {
@@ -18,12 +21,15 @@ type AvailabilityRow = {
   max_overnight_guests: number
   included_chargeable_guests: number
   from_amount_paise: number | null
+  standard_from_amount_paise: number | null
+  offer_name: string | null
+  offer_discount_bps: number | null
 }
 
 export async function getAvailableProducts(checkIn: string, checkOut: string, partySize: number): Promise<AvailableProduct[]> {
   if (!supabase) throw new Error('UAT connection has not been configured.')
 
-  const { data, error } = await supabase.rpc('get_available_products', {
+  const { data, error } = await supabase.rpc('get_available_products_with_offers', {
     p_check_in: checkIn,
     p_check_out: checkOut,
     p_party_size: partySize,
@@ -39,6 +45,9 @@ export async function getAvailableProducts(checkIn: string, checkOut: string, pa
     maxOvernightGuests: row.max_overnight_guests,
     includedChargeableGuests: row.included_chargeable_guests,
     fromAmountPaise: row.from_amount_paise,
+    standardFromAmountPaise: row.standard_from_amount_paise,
+    offerName: row.offer_name,
+    offerDiscountBps: row.offer_discount_bps,
   }))
 }
 

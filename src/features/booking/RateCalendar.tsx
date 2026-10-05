@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatInrFromPaise } from './availability'
 
-type DailyRate = { stay_date: string; couple_room_paise: number; tier_code: string }
+type DailyRate = { stay_date: string; couple_room_paise: number; tier_code: string; promotion_label: string | null; promotion_discount_bps: number | null; promotional_couple_room_paise: number | null }
 
 type RateCalendarProps = {
   checkIn: string
@@ -64,7 +64,7 @@ export function RateCalendar({ checkIn, checkOut, onChange }: RateCalendarProps)
     let active = true
     async function loadRates() {
       if (!supabase) return
-      const { data, error } = await supabase.rpc('get_public_daily_rate_calendar', {
+      const { data, error } = await supabase.rpc('get_public_rate_calendar_with_offers', {
         p_start_date: earliestVisible,
         p_end_date: latestVisible,
       })
@@ -120,9 +120,10 @@ export function RateCalendar({ checkIn, checkOut, onChange }: RateCalendarProps)
             isEnd ? 'is-end' : '',
             isInRange ? 'is-in-range' : '',
           ].filter(Boolean).join(' ')
+          const displayedRate = rate?.promotional_couple_room_paise ?? rate?.couple_room_paise
           return <button type="button" key={value} className={classNames} disabled={isPast || unavailable} onClick={() => chooseDay(value)}>
             <span>{date.getDate()}</span>
-            {rate ? <small>{formatInrFromPaise(rate.couple_room_paise)}</small> : <small>{hasPublishedRates ? '—' : 'Select'}</small>}
+            {rate ? <><small>{formatInrFromPaise(displayedRate ?? null)}</small>{rate.promotion_discount_bps && <small className="rate-calendar-offer">{rate.promotion_discount_bps / 100}% off</small>}</> : <small>{hasPublishedRates ? '—' : 'Select'}</small>}
           </button>
         })}
       </div>
@@ -141,6 +142,6 @@ export function RateCalendar({ checkIn, checkOut, onChange }: RateCalendarProps)
       </div>
     </div>
     <div className="rate-calendar-months">{renderMonth(visibleMonth)}{renderMonth(secondMonth)}</div>
-    <p className="rate-calendar-note">{hasPublishedRates ? 'Rates shown are the nightly breakfast-included rate for two guests in one room. Your exact stay price updates after you choose a stay and guest details.' : 'Select your dates. Published nightly rates will appear here once the daily rate calendar is activated.'}</p>
+    <p className="rate-calendar-note">{hasPublishedRates ? 'Rates shown are the nightly breakfast-included rate for two guests in one room. Green offer labels show eligible couple offers; your exact stay price updates after you choose a stay and guest details.' : 'Select your dates. Published nightly rates will appear here once the daily rate calendar is activated.'}</p>
   </section>
 }
