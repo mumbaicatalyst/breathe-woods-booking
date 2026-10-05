@@ -167,6 +167,8 @@ export function BookingApp() {
     'I’ve sent a reservation request and would like to confirm availability and the payment next steps.',
     '',
     `Guest: ${guestName.trim()}`,
+    `Email: ${guestEmail.trim()}`,
+    `Mobile / WhatsApp: ${guestPhoneE164}`,
     `Dates: ${formatStayDate(draft.checkIn)} – ${formatStayDate(draft.checkOut)}`,
     `Stay requested: ${selectedProduct?.productName ?? 'Breathe Woods stay'}`,
     `Guests: ${whatsappGuestSummary}`,
