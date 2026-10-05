@@ -26,6 +26,12 @@ export async function ownerReservationAction(reservationId: string, action: 'sta
   return data as { status: string; expires_at?: string; cancellation_policy?: ReservationDetail['cancellation_policy'] }
 }
 
+export async function recordOwnerReservationEvent(reservationId: string, event: 'guest_contacted' | 'payment_requested', note?: string) {
+  if (!supabase) throw new Error('UAT connection has not been configured.')
+  const { error } = await supabase.rpc('owner_record_reservation_event', { p_reservation_id: reservationId, p_event: event, p_note: note ?? null })
+  if (error) throw new Error(error.message)
+}
+
 export async function offerAlternativeDates(reservationId: string, checkIn: string, checkOut: string, note?: string) {
   if (!supabase) throw new Error('UAT connection has not been configured.')
   const { data, error } = await supabase.rpc('owner_reprice_reservation_request', { p_reservation_id: reservationId, p_check_in: checkIn, p_check_out: checkOut, p_note: note ?? null })
