@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { appConfig, isSupabaseConfigured } from '../../lib/config'
 import { supabase } from '../../lib/supabase'
 import { OwnerOverview } from './OwnerOverview'
+import { OwnerManagement } from './OwnerManagement'
 import { getOwnerCalendar, getOwnerOpenReservationRequests, getOwnerReservationAlternatives, getOwnerReservationDetail, offerAlternativeDates, offerAlternativeStay, ownerReservationAction, simulateUatSuccessfulPayment, type CalendarRow, type ReservationAlternative, type ReservationDetail, type ReservationRequestRow } from './calendar'
 
 function isoDate(date: Date) {
@@ -31,7 +32,7 @@ export function OwnerDashboard() {
   const [session, setSession] = useState<Session | null>(null)
   const [email, setEmail] = useState('')
   const [message, setMessage] = useState<string | null>(null)
-  const [dashboardView, setDashboardView] = useState<'overview' | 'reservations'>('overview')
+  const [dashboardView, setDashboardView] = useState<'overview' | 'reservations' | 'manage'>('overview')
   const [calendarRows, setCalendarRows] = useState<CalendarRow[]>([])
   const [reservationRequests, setReservationRequests] = useState<ReservationRequestRow[]>([])
   const [calendarError, setCalendarError] = useState<string | null>(null)
@@ -229,12 +230,15 @@ export function OwnerDashboard() {
         <nav className="owner-nav" aria-label="Owner dashboard sections">
           <button className={dashboardView === 'overview' ? 'is-active' : ''} onClick={() => setDashboardView('overview')}>Overview</button>
           <button className={dashboardView === 'reservations' ? 'is-active' : ''} onClick={() => setDashboardView('reservations')}>Reservations</button>
+          <button className={dashboardView === 'manage' ? 'is-active' : ''} onClick={() => setDashboardView('manage')}>Manage</button>
         </nav>
         <button className="secondary" onClick={() => void supabase?.auth.signOut()}>Sign out</button>
       </div>
     </header>
 
     {dashboardView === 'overview' && <OwnerOverview onOpenReservations={openReservations} />}
+
+    {dashboardView === 'manage' && <OwnerManagement />}
 
     {dashboardView === 'reservations' && <>
       <section className="owner-intro"><p>Review each physical room, active payment hold and confirmed booking. Select a booking to see the guest, stay, price and payment summary.</p></section>
