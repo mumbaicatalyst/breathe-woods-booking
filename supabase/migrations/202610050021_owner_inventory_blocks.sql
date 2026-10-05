@@ -25,7 +25,7 @@ create or replace function public.owner_create_inventory_block(
   p_target_id uuid, p_scope text, p_check_in date, p_check_out date, p_reason text
 )
 returns jsonb language plpgsql security definer set search_path = public as $$
-declare v_property_id uuid; v_block_id uuid; v_target resources%rowtype; v_count integer;
+declare v_property_id uuid; v_block_id uuid; v_target resources%rowtype; v_count integer; v_expected_scope text;
 begin
   select property_id into v_property_id from owner_profiles where user_id = auth.uid();
   if v_property_id is null then raise exception 'You do not have access to this dashboard'; end if;
@@ -33,7 +33,12 @@ begin
   if length(trim(coalesce(p_reason, ''))) < 2 then raise exception 'Please add a short reason for the block'; end if;
   select * into v_target from resources where id = p_target_id and property_id = v_property_id and active;
   if not found then raise exception 'This block target is not available'; end if;
-  if p_scope not in ('room', 'villa', 'property') or p_scope <> case when v_target.resource_kind = 'room' then 'room' when v_target.resource_kind = 'villa' then 'villa' else 'property' end then
+  v_expected_scope := case
+    when v_target.resource_kind = 'room' then 'room'
+    when v_target.resource_kind = 'villa' then 'villa'
+    else 'property'
+  end;
+  if p_scope not in ('room', 'villa', 'property') or p_scope <> v_expected_scope then
     raise exception 'This block target is invalid';
   end if;
   perform public.lock_property_inventory(v_property_id);
