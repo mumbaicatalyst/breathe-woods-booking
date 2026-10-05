@@ -20,7 +20,6 @@ Use these Make scenario variables while testing:
 | Variable | UAT value |
 | --- | --- |
 | `OWNER_EMAIL` | `farazdakh@gmail.com` |
-| `APP_URL` | `http://127.0.0.1:5173` |
 | Gmail sender | The connected test Gmail account |
 
 The local dashboard link works only on the computer running the booking app. That is expected during UAT.
@@ -37,17 +36,14 @@ The local dashboard link works only on the computer running the booking app. Tha
 
 ## Email content
 
-### Owner: new request
+The database generates both polished HTML emails. In Make, map only these two fields:
 
-**Subject:** New reservation request — `{{reference}}`
+| Route | Gmail subject | Gmail HTML content |
+| --- | --- | --- |
+| `owner_request_received` | `record.payload.email.owner.subject` | `record.payload.email.owner.html` |
+| `guest_booking_confirmed` | `record.payload.email.guest.subject` | `record.payload.email.guest.html` |
 
-Include guest name, email, phone, dates, stay, party breakdown, meal plan, requested add-ons, estimated total, and a **Review request** link to `{{APP_URL}}{{dashboard_path}}`.
-
-### Guest: booking confirmed
-
-**Subject:** Your Breathe Woods stay is confirmed — `{{reference}}`
-
-Thank the guest, confirm dates/stay/party and paid total, state that payment has been received, include the cancellation terms link, and give the Breathe Woods contact details for arrival questions.
+Set the Gmail module's content type to **HTML**. The templates include the reservation reference, guest/stay details, formatted total and, for the owner, a dashboard button.
 
 ## Production switch: no code changes
 
@@ -56,7 +52,6 @@ Before launch, update only the Make scenario variables and Gmail connection:
 | Setting | Production value |
 | --- | --- |
 | `OWNER_EMAIL` | `breathewoods@gmail.com` |
-| `APP_URL` | The final public booking-app URL |
 | Gmail sender | `breathewoods@gmail.com` connected to Make |
 
-The dashboard URL is assembled by Make from `APP_URL` and the database-provided path, so the templates do not need editing when moving to Netlify. Test both email routes after the switch.
+The dashboard URL comes from the Supabase `booking_app_url` setting. Update that one value from the local URL to the final public booking-app URL before launch; the templates do not need editing. Test both email routes after the switch.
