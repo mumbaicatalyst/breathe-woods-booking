@@ -18,7 +18,11 @@ This checklist is for the first public launch with manual payment confirmation. 
 
 - [ ] Create or confirm a separate production Supabase project. Do not reuse UAT data or credentials.
 - [ ] Apply the reviewed database migrations and production daily-rate calendar.
-- [ ] Create Prashant's production owner profile and test owner sign-in with a non-owner account as a negative test.
+- [ ] Do not apply the UAT-only payment simulator migration to production; apply `202610060040_production_hardening.sql` last.
+- [ ] Apply `202610060041_rpc_hardening.sql` in both environments so obsolete anonymous booking-hold RPCs cannot be called directly.
+- [ ] Create production profiles exactly as documented in [`production-owner-access.md`](./production-owner-access.md): `sanil.prashant@gmail.com` as `owner` and `farazdakh@gmail.com` as `manager`.
+- [ ] Apply the hardened owner function definitions and run the viewer negative test before launch.
+- [ ] Test that an account not present in `owner_profiles` cannot access the dashboard or any owner RPC.
 - [ ] Configure the final production website and owner dashboard URLs in Supabase Auth redirect settings.
 - [ ] In Netlify, set only `VITE_APP_ENV=production`, `VITE_SUPABASE_URL`, and `VITE_SUPABASE_ANON_KEY`. Never add a service-role key.
 - [ ] Build the booking app with `VITE_APP_BASE_PATH=/book/` and serve it under `breathewoods.com/book/`.
@@ -77,3 +81,8 @@ Do this only after the Netlify staging site and production data have been signed
 - [ ] Add Google Analytics and booking-funnel analytics.
 - [ ] Confirm Google Calendar view-only sync once the production calendar connection is ready.
 - [ ] Review conversion, abandoned requests, pending payments, and owner response times after the first week.
+
+## 8. Post-launch owner dashboard refinement
+
+- [ ] Restructure the owner dashboard information architecture, especially the Manage section, so related settings and actions are grouped more clearly.
+- [ ] Improve visual hierarchy, navigation labels, and mobile layout after the core booking workflow has been used in UAT and production.

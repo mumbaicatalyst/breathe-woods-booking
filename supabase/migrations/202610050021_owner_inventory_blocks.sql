@@ -30,7 +30,7 @@ returns jsonb language plpgsql security definer set search_path = public as $$
 declare v_property_id uuid; v_block_id uuid; v_target resources%rowtype; v_count integer; v_expected_scope text;
 begin
   select property_id into v_property_id from owner_profiles where user_id = auth.uid();
-  if v_property_id is null then raise exception 'You do not have access to this dashboard'; end if;
+  if v_property_id is null or (select role from owner_profiles where user_id = auth.uid()) = 'viewer' then raise exception 'You do not have permission to change availability'; end if;
   if p_check_out <= p_check_in then raise exception 'Choose a valid block date range'; end if;
   if length(trim(coalesce(p_reason, ''))) < 2 then raise exception 'Please add a short reason for the block'; end if;
   select * into v_target from resources where id = p_target_id and property_id = v_property_id and active;
@@ -66,7 +66,7 @@ returns void language plpgsql security definer set search_path = public as $$
 declare v_property_id uuid;
 begin
   select property_id into v_property_id from owner_profiles where user_id = auth.uid();
-  if v_property_id is null then raise exception 'You do not have access to this dashboard'; end if;
+  if v_property_id is null or (select role from owner_profiles where user_id = auth.uid()) = 'viewer' then raise exception 'You do not have permission to change availability'; end if;
   perform public.lock_property_inventory(v_property_id);
   if not exists (select 1 from inventory_blocks where id = p_block_id and property_id = v_property_id) then raise exception 'This block was not found'; end if;
   delete from inventory_blocks where id = p_block_id and property_id = v_property_id;

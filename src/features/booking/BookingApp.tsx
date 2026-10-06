@@ -349,6 +349,10 @@ export function BookingApp() {
 
   async function submitReservationRequest() {
     if (!draft.selectedProductId) return
+    if (!draft.checkIn || !draft.checkOut || draft.checkOut <= draft.checkIn) {
+      setRequestError('Please choose a check-out date after your check-in date.')
+      return
+    }
     setIsSubmittingRequest(true)
     setRequestError(null)
     try {

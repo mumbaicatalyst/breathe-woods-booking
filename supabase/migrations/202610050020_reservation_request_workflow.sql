@@ -118,7 +118,7 @@ declare
   v_property_id uuid; v_reservation reservations%rowtype; v_inputs reservation_request_inputs%rowtype; v_quote jsonb; v_item jsonb;
 begin
   select property_id into v_property_id from owner_profiles where user_id = auth.uid();
-  if v_property_id is null then raise exception 'You do not have access to this dashboard'; end if;
+  if v_property_id is null or (select role from owner_profiles where user_id = auth.uid()) = 'viewer' then raise exception 'You do not have permission to change this reservation'; end if;
   select * into v_reservation from reservations where id = p_reservation_id and property_id = v_property_id for update;
   if not found then raise exception 'Reservation not found'; end if;
   if v_reservation.status not in ('requested', 'in_conversation', 'alternative_offered') then raise exception 'Only an open reservation request can be re-priced'; end if;
@@ -149,7 +149,7 @@ declare
   v_allocated integer; v_expiry timestamptz; v_policy jsonb;
 begin
   select property_id into v_property_id from owner_profiles where user_id = auth.uid();
-  if v_property_id is null then raise exception 'You do not have access to this dashboard'; end if;
+  if v_property_id is null or (select role from owner_profiles where user_id = auth.uid()) = 'viewer' then raise exception 'You do not have permission to change this reservation'; end if;
   select * into v_reservation from reservations where id = p_reservation_id and property_id = v_property_id for update;
   if not found then raise exception 'Reservation not found'; end if;
   select * into v_product from bookable_products where id = v_reservation.product_id;
@@ -264,6 +264,8 @@ revoke all on function public.owner_reservation_workflow_action(uuid, text, inte
 grant execute on function public.create_reservation_request_bundle_aware(uuid, date, date, integer, integer, integer, integer, text, integer, integer, integer, text, text, text, boolean) to anon, authenticated;
 grant execute on function public.get_owner_reservation_detail(uuid) to authenticated;
 grant execute on function public.get_owner_open_reservation_requests() to authenticated;
-grant execute on function public.get_reservation_cancellation_policy(uuid) to authenticated;
+-- This helper is used internally by owner workflows and owner detail. It is
+-- not exposed directly because it can reveal payment/refund information for an
+-- arbitrary reservation ID.
 grant execute on function public.owner_reservation_workflow_action(uuid, text, integer, text) to authenticated;
 grant execute on function public.owner_reprice_reservation_request(uuid, date, date, text) to authenticated;

@@ -164,7 +164,7 @@ declare
   v_property_id uuid; v_reservation reservations%rowtype; v_inputs reservation_request_inputs%rowtype; v_quote jsonb; v_item jsonb;
 begin
   select property_id into v_property_id from owner_profiles where user_id = auth.uid();
-  if v_property_id is null then raise exception 'You do not have access to this dashboard'; end if;
+  if v_property_id is null or (select role from owner_profiles where user_id = auth.uid()) = 'viewer' then raise exception 'You do not have permission to change this reservation'; end if;
   select * into v_reservation from reservations where id = p_reservation_id and property_id = v_property_id for update;
   if not found then raise exception 'Reservation not found'; end if;
   if v_reservation.status not in ('requested', 'in_conversation', 'alternative_offered') then raise exception 'Only an open reservation request can be re-priced'; end if;
@@ -219,7 +219,7 @@ declare
   v_inputs reservation_request_inputs%rowtype; v_quote jsonb; v_item jsonb;
 begin
   select property_id into v_property_id from owner_profiles where user_id = auth.uid();
-  if v_property_id is null then raise exception 'You do not have access to this dashboard'; end if;
+  if v_property_id is null or (select role from owner_profiles where user_id = auth.uid()) = 'viewer' then raise exception 'You do not have permission to change this reservation'; end if;
   select * into v_reservation from reservations where id = p_reservation_id and property_id = v_property_id for update;
   if not found then raise exception 'Reservation not found'; end if;
   if v_reservation.status not in ('requested', 'in_conversation', 'alternative_offered') then raise exception 'Only an open reservation request can be changed'; end if;

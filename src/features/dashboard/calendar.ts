@@ -6,6 +6,8 @@ export type CalendarRow = {
 export type BlockTarget = { target_id: string; scope: 'room' | 'villa' | 'property'; label: string }
 export type ReservationRequestRow = { reservation_id: string; reference: string; status: string; check_in: string; check_out: string; guest_name: string | null; product_name: string | null; total_paise: number | null; created_at: string }
 export type ReservationAlternative = { product_id: string; product_code: string; product_name: string; sellable_kind: string; total_paise: number }
+export type OwnerBookableProduct = { product_id: string; product_code: string; product_name: string; sellable_kind: string }
+export type OwnerBookingQuote = { total_paise: number; items: Array<{ label: string; quantity?: number; amount_paise: number }>; notice?: string }
 
 export type ReservationDetail = {
   reservation: {
@@ -65,6 +67,64 @@ export async function getOwnerOpenReservationRequests() {
   const { data, error } = await supabase.rpc('get_owner_open_reservation_requests')
   if (error) throw new Error(error.message)
   return data as ReservationRequestRow[]
+}
+
+export async function getOwnerBookableProducts() {
+  if (!supabase) throw new Error('UAT connection has not been configured.')
+  const { data, error } = await supabase.rpc('get_owner_bookable_products')
+  if (error) throw new Error(error.message)
+  return data as OwnerBookableProduct[]
+}
+
+export async function getOwnerBookingQuote(productId: string, checkIn: string, checkOut: string, adults: number, children7To12: number, children0To6: number, pets: number) {
+  if (!supabase) throw new Error('UAT connection has not been configured.')
+  const { data, error } = await supabase.rpc('get_booking_quote_with_experiences', {
+    p_product_id: productId, p_check_in: checkIn, p_check_out: checkOut,
+    p_adults: adults, p_children_7_to_12: children7To12, p_children_0_to_6: children0To6,
+    p_pets: pets, p_meal_plan: 'breakfast', p_bonfire_sessions: 0, p_lake_outings: 0,
+    p_lake_trip_guests: 0, p_experience_selections: [],
+  })
+  if (error) throw new Error(error.message)
+  return data as OwnerBookingQuote
+}
+
+export type AssistedBookingInput = {
+  productId: string; checkIn: string; checkOut: string; adults: number; children7To12: number; children0To6: number; pets: number
+  guestName: string; guestEmail: string; guestPhone: string; source: string; totalPaise: number | null; paymentState: 'not_recorded' | 'pending' | 'paid'; paymentReference: string; internalNote: string
+}
+
+export async function createOwnerAssistedBooking(input: AssistedBookingInput) {
+  if (!supabase) throw new Error('UAT connection has not been configured.')
+  const { data, error } = await supabase.rpc('owner_create_assisted_booking', {
+    p_product_id: input.productId, p_check_in: input.checkIn, p_check_out: input.checkOut,
+    p_adults: input.adults, p_children_7_to_12: input.children7To12, p_children_0_to_6: input.children0To6,
+    p_pets: input.pets, p_guest_name: input.guestName, p_guest_email: input.guestEmail || null,
+    p_guest_phone: input.guestPhone || null, p_source: input.source, p_total_paise: input.totalPaise,
+    p_payment_state: input.paymentState, p_payment_reference: input.paymentReference || null,
+    p_internal_note: input.internalNote || null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { reservation_id: string; reference: string }
+}
+
+export async function confirmOwnerAssistedPayment(reservationId: string, paymentReference: string) {
+  if (!supabase) throw new Error('UAT connection has not been configured.')
+  const { data, error } = await supabase.rpc('owner_confirm_assisted_payment', { p_reservation_id: reservationId, p_payment_reference: paymentReference || null })
+  if (error) throw new Error(error.message)
+  return data as { status: string; reference: string }
+}
+
+export async function getOwnerPaymentInstructions() {
+  if (!supabase) throw new Error('UAT connection has not been configured.')
+  const { data, error } = await supabase.rpc('get_owner_payment_instructions')
+  if (error) throw new Error(error.message)
+  return (data as string | null) ?? ''
+}
+
+export async function saveOwnerPaymentInstructions(instructions: string) {
+  if (!supabase) throw new Error('UAT connection has not been configured.')
+  const { error } = await supabase.rpc('owner_save_payment_instructions', { p_instructions: instructions })
+  if (error) throw new Error(error.message)
 }
 
 export async function getOwnerBlockTargets() {
