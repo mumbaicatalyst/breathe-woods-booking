@@ -368,7 +368,10 @@ export function BookingApp() {
     <main className="booking-shell">
       <header className="booking-header">
         <a className="booking-wordmark" href={publicSiteHref()} aria-label="Breathe Woods home">
-          <img src="/breathe-woods-wordmark.png" alt="Breathe Woods" />
+          <picture>
+            <source media="(max-width: 700px)" srcSet="/breathe-woods-wordmark-mobile-green.png" />
+            <img src="/breathe-woods-wordmark.png" alt="Breathe Woods" />
+          </picture>
         </a>
         <a className="header-note return-link" href={bookingReturnHref()}>← Back to Breathe Woods</a>
       </header>
