@@ -45,7 +45,18 @@ Do this only after the Netlify staging site and production data have been signed
 - [ ] Confirm the cancellation guidance is correct for ordinary, long-weekend, festive, full-villa, and group stays.
 - [ ] Confirm privacy, marketing-consent, and cancellation links open without losing booking progress.
 
-## 4. Notifications and operating process — launch blocker
+## 4. Canonical website bundle and visual sign-off — launch blocker
+
+- [ ] Deploy the static website only from the `netlify-preview` repository's approved release commit. Do not deploy from an older local preview folder.
+- [ ] Build the booking application from the matching approved `breathe-woods-booking` release commit and place that build under `/book/` in the same Netlify deployment.
+- [ ] Use a Netlify deploy-preview URL as the sole sign-off environment; do not use a browser's cached localhost page as release evidence.
+- [ ] At 390px, verify the homepage, stays, property, dining, explore, information, contact and cancellation pages: header, footer, horizontal mobile wordmark, navigation and booking links.
+- [ ] At 768px and 1280px, verify the same pages retain the desktop/tablet wordmark, layouts and footer links.
+- [ ] At 390px and 1280px, verify `/book/` and `/book/owner`: branded header alignment, return link, booking flow and owner access.
+- [ ] Check browser console output for errors and test a cache-bypassing refresh on every page before sign-off.
+- [ ] Record the two release commit IDs and the approved deploy-preview URL before changing the live domain records.
+
+## 5. Notifications and operating process — launch blocker
 
 - [ ] Switch Make.com owner notification recipient and sender to `breathewoods@gmail.com`.
 - [ ] Update the dashboard URL in Supabase `booking_app_url` to the live `/book/owner` address.
@@ -53,15 +64,15 @@ Do this only after the Netlify staging site and production data have been signed
 - [ ] Confirm Make failures are visible and that queued notification rows can be retried.
 - [ ] Agree a daily owner routine: review requests, action holds, confirm manual payments, and process cancellations/refunds.
 
-## 5. Security and resilience — launch blocker
+## 6. Security gap closure and resilience — launch blocker
 
-- [ ] Add public-request rate limiting and a bot-control challenge such as Turnstile before sharing the booking form widely.
-- [ ] Configure HTTPS, security headers/CSP, and a restrictive production Supabase CORS/Auth configuration.
-- [ ] Re-run dependency audit with working network access and resolve high-severity findings.
-- [ ] Verify no production secret is present in the website repository, browser configuration, screenshots, or Make webhook URLs.
-- [ ] Run the final Security Review before deploying.
+- [ ] Close the already identified public-form abuse gap: add rate limiting and a bot-control challenge such as Turnstile before sharing the booking form widely.
+- [ ] Close the deployment-configuration gap: configure HTTPS, security headers/CSP, and restrictive production Supabase CORS/Auth settings.
+- [ ] Close the dependency-audit gap: run the audit with working network access and resolve any high-severity findings.
+- [ ] Close the secrets-exposure gap: verify no production secret is present in the website repository, browser configuration, screenshots, or Make webhook URLs.
+- [ ] Perform a targeted final Security Review against these documented open gaps and their evidence of closure; do not restart a broad review from scratch.
 
-## 6. First-week follow-up
+## 7. First-week follow-up
 
 - [ ] Add Google Analytics and booking-funnel analytics.
 - [ ] Confirm Google Calendar view-only sync once the production calendar connection is ready.
