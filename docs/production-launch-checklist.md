@@ -24,6 +24,18 @@ This checklist is for the first public launch with manual payment confirmation. 
 - [ ] Build the booking app with `VITE_APP_BASE_PATH=/book/` and serve it under `breathewoods.com/book/`.
 - [ ] Add a Netlify redirect so `/book/*` serves the booking application's `index.html`, including `/book/owner`.
 
+### Final domain hand-off: GoDaddy / Wix to Netlify
+
+Do this only after the Netlify staging site and production data have been signed off.
+
+- [ ] In Netlify, add `breathewoods.com` and `www.breathewoods.com`; choose one as the primary domain.
+- [ ] In GoDaddy, open **My Products → Domains → Manage DNS** and first check which nameservers are authoritative.
+- [ ] If GoDaddy nameservers are in use, update the root-domain `A` and `www` `CNAME` website records with the exact values Netlify provides.
+- [ ] If custom/Wix nameservers are in use, make those website-record changes at the authoritative DNS provider instead. Do not change nameservers merely to move the website.
+- [ ] Preserve all `MX` and `TXT` records so existing domain email, forwarding, SPF and DKIM continue working.
+- [ ] Verify `breathewoods.com`, `www.breathewoods.com`, `/book/`, and `/book/owner` after propagation.
+- [ ] Keep Wix active until the new domain has worked reliably for at least one to two days; then cancel only the Wix service that is no longer needed.
+
 ## 3. Guest and owner workflow — launch blocker
 
 - [ ] Test request submission from desktop and mobile.
